@@ -61,6 +61,7 @@ bench/run.sh <attempt> enwik8                 # accept or reject a step, a few m
 NOTE="step 3: wiki contexts" bench/run.sh <attempt> enwik8   # note goes into the CSV
 sudo bench/remote-run.sh <attempt> enwik9 out/  # release run on any clean Linux machine
 bench/cloud/gcp-run.sh <attempt> enwik9       # same, on a throwaway Google Cloud VM
+bench/cloud/gcp-batch.sh <attempt> enwik7 <variants-file>  # many CFLAGS variants on one cloud VM, plus edge cases
 tools/bitcost/                                # where the bits go, per region type
 ```
 

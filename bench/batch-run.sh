@@ -9,7 +9,8 @@
 # are ignored. A line with just a name builds with no extra flags.
 # Parallelism: JOBS, default min(cores, RAM / PER_JOB_GB) with PER_JOB_GB=2.5.
 # Output: <outdir>/results.tsv (name, archive bytes, compress s, decompress s,
-# peak MB, verified, cflags), sorted by size.
+# peak MB, verified, cflags), sorted by size, after an "edgecases" row for
+# tools/edgecases.sh on the default build.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 attempt=${1:?usage: batch-run.sh <attempt> <input> <variants-file> [outdir]}
@@ -44,6 +45,12 @@ one() {
   rm -f "$dir/restored" "$dir/arc"
 }
 export -f one
+
+# Edge cases first, on the default build (tools/edgecases.sh): a row "edgecases"
+# with verified=yes/NO, so no experiment batch can skip them.
+ec=NO
+[ -f tools/edgecases.sh ] && bash tools/edgecases.sh "$attempt" > "$out/edgecases.log" 2>&1 && ec=yes
+printf 'edgecases\t0\t0\t0\t0\t%s\t(default build, see edgecases.log)\n' "$ec" > "$out/edgecases.row"
 export ATTEMPT="$attempt" SRC="$src" BATCH_DIR="$(pwd)/work/batch"
 
 grep -vE '^\s*(#|$)' "$variants" | xargs -P "$jobs" -L 1 bash -c 'one "$@"' _ > "$out/results.unsorted"
@@ -51,5 +58,5 @@ grep -vE '^\s*(#|$)' "$variants" | xargs -P "$jobs" -L 1 bash -c 'one "$@"' _ > 
   printf 'name\tarchive_bytes\tcompress_s\tdecompress_s\tpeak_mb\tverified\tcflags\n'
   sort -t "$(printf '\t')" -k2,2n "$out/results.unsorted"
 } > "$out/results.tsv"
-rm -f "$out/results.unsorted"
+rm -f "$out/results.unsorted" "$out/edgecases.row"
 column -t -s "$(printf '\t')" "$out/results.tsv"

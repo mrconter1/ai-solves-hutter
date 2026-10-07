@@ -46,5 +46,24 @@ $0.19/h): an enwik8 run costs a few cents, an enwik9 round trip about $1.
 Settings: `GCP_PROJECT`, `GCP_ZONE`, `GCP_BUCKET`, `MAX_HOURS`, `NOTE`,
 `CFLAGS`.
 
+### Experiments: many variants on one VM
+
+```bash
+cat > work/variants.txt <<'V'
+base
+lr2   -DMIXER_LR=2
+mix2  -DUSE_MIX2=1 -DMIX2_LR=3
+V
+bench/cloud/gcp-batch.sh cm2 enwik7 work/variants.txt   # one n2d-standard-8 VM
+bench/cloud/gcp-fetch.sh <run-id>                       # results table when done
+```
+
+`bench/batch-run.sh` builds every variant (`<name> <CFLAGS...>` per line) and
+round-trips it, as many in parallel as cores and RAM allow, then writes a
+table sorted by size. Every batch first runs `tools/edgecases.sh` on the
+default build (the `edgecases` row). It's for choosing between ideas, not for
+leaderboard numbers: there is no sandbox, but every round trip is verified.
+A batch of enwik7 variants takes about 5 minutes and a few cents.
+
 An adapter for another provider only needs to do the same three things: get
 the tree onto a VM, run `bench/remote-run.sh`, and bring `out/` back.
