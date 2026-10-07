@@ -79,7 +79,7 @@ typedef uint64_t U64;
  *   8 number                16 sparse: bytes 2-3 back  32 word + word before previous
  * MIXSEL_PARSE=1 also picks the mixer weight set by a coarse parse state. */
 #ifndef WIKICTX
-#define WIKICTX 55          /* 1+2+4+16+32; the number model (8) did not help */
+#define WIKICTX 37          /* 1+4+32: best gain per time; see README for the others */
 #endif
 #ifndef MIXSEL_PARSE
 #define MIXSEL_PARSE 1
