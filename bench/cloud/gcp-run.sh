@@ -8,8 +8,9 @@
 # deletes itself. --max-run-duration deletes it anyway if anything hangs, so it
 # can never keep billing. Collect results with bench/cloud/gcp-fetch.sh.
 #
-# Settings (env): GCP_PROJECT, GCP_ZONE, GCP_BUCKET, MAX_HOURS, MAX_VMS (default 2), NOTE, CFLAGS. CFLAGS
-# (extra build flags, e.g. CFLAGS="-DTABLE_BITS=26" for a release-size run).
+# Settings (env): GCP_PROJECT, GCP_ZONE, GCP_BUCKET, MAX_HOURS, MAX_VMS (default 2),
+# NOTE, and CFLAGS (extra build flags, e.g. CFLAGS="-DTABLE_BITS=26" for a
+# release-size run).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
