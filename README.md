@@ -44,10 +44,13 @@ total x 8 divided by the 10^9 input bytes. Lower is better.
 "vs record" is `S / record - 1`: how much bigger an entry is than the record.
 Official figures come from [prize.hutter1.net](http://prize.hutter1.net/).
 
-\* Round-trip check (decompress and byte-for-byte compare) still running. The
-compression took 1 h 28 min at 2.85 GB peak RAM on an AMD Ryzen 5 PRO 7540U
-laptop under WSL, pinned to one core. The time is inflated: the host ran out
-of RAM and paged the WSL VM during the run.
+\* Round-trip verified: decompressing gave back enwik9 byte for byte. Compression
+took 1 h 28 min and decompression 41 min, at 2.8 GB peak RAM, on an AMD Ryzen
+5 PRO 7540U laptop under WSL, pinned to one core. The compression time is
+inflated, because the host ran out of RAM and paged the WSL VM. This run
+predates the sandboxed harness and used an 18.5 KB dynamically linked binary.
+The self-contained static (musl) build of the same code is 50.6 KB, which
+would make the total 180,606,780 bytes.
 
 Development runs on the smaller enwik7 and enwik8 slices are logged with all
 the others in [`results/results.csv`](results/results.csv).
@@ -69,17 +72,40 @@ Everything runs on Linux, because the contest takes Linux binaries. On Windows, 
 ```bash
 bench/fetch.sh                      # ~300 MB download, unpacks to 1 GB
 bench/run.sh cm1                    # enwik7, about a minute
-bench/run.sh cm1 enwik9             # the real thing, about 1.5 hours for cm1
+bench/run.sh cm1 enwik9             # the real thing, about 2 hours for cm1
 ```
-
-`run.sh` applies the contest limits rather than just measuring them. It pins
-the process to one core with `taskset`, caps the address space at 10 GB with
-`ulimit -v`, and records wall time and peak resident memory with
-`/usr/bin/time -v`. That is close enough for development, so no VM is needed.
-A run that fails verification still gets logged, with `verified=NO`.
 
 From Git Bash, prefix `wsl` calls with `MSYS_NO_PATHCONV=1`, otherwise
 `/mnt/c/...` paths get rewritten to Windows paths.
+
+## How the contest limits are enforced
+
+`run.sh` enforces the limits rather than just measuring them. No VM is needed.
+The numbers live in [`bench/limits.sh`](bench/limits.sh).
+
+| Rule | How |
+|---|---|
+| One CPU core | `taskset` pins the process to a single CPU |
+| < 10 GB RAM | `ulimit -v` caps the address space at 10 GB, which is stricter than resident memory. Peak RSS is logged |
+| ~50 h per direction | `timeout` kills the run at `50 h / SPEED_FACTOR`. The factor converts to the contest's test machine (see below) |
+| < 100 GB disk | The sandbox's size is sampled every 5 s. The run is killed if it goes over, and the peak is logged |
+| No outside input | Each direction runs chrooted (`unshare --root`) in a fresh directory, with no network. The compressor sees only itself and the input. The decompressor sees only itself and the archive |
+| Self-contained program | The binary must be static, or `run.sh` refuses it. Inside the chroot there are no shared libraries anyway |
+| Lossless | The output is compared byte for byte with the original |
+
+A run that breaks a limit is still logged. `verified` then says why, for
+example `NO (compress over time limit)`.
+
+**Time calibration.** The prize times runs on "a 2.7 GHz i7" class core. The
+dev laptop's Ryzen 5 PRO 7540U is estimated to be about 2x faster per core
+(`SPEED_FACTOR=2.0`), so the limit applied here is 25 h. That factor is an
+estimate from clock speed and IPC, not a measurement. The FAQ's rule of thumb
+(500,000 / GeekBench 5 score hours) can replace it once both machines have a
+score. Timings also get noisy when other heavy jobs share the machine.
+
+**Binary size.** glibc's static runtime adds about 730 KB to the score, which
+is 0.7% of the record. `build.sh` uses `musl-gcc` when it is installed
+(`sudo apt install musl-tools`), which brings cm1 down to tens of KB.
 
 ## License
 
