@@ -100,6 +100,27 @@ bench/run.sh cm1 enwik9             # the real thing, about 2 hours for cm1
 From Git Bash, prefix `wsl` calls with `MSYS_NO_PATHCONV=1`, otherwise
 `/mnt/c/...` paths get rewritten to Windows paths.
 
+## Running in the cloud
+
+Long runs go to a throwaway Google Cloud VM, so they don't depend on this
+laptop's RAM:
+
+```bash
+bench/cloud/gcp-run.sh cm2 enwik9                    # starts a VM, returns at once
+bench/cloud/gcp-fetch.sh                             # list runs and their status
+bench/cloud/gcp-fetch.sh <run-id>                    # log tail; appends the row when done
+```
+
+The VM gets the committed tree (`git archive HEAD`), runs `bench/run.sh` with
+the same limits as locally, uploads the result row and logs to a bucket, and
+deletes itself. `--max-run-duration` deletes it anyway if anything hangs, so
+it can't keep billing. The default machine is `n2d-standard-4` (AMD EPYC, 16 GB,
+about $0.19/h), so an enwik9 round trip for cm1 or cm2 costs about $1.
+
+The smoke test ran cm2 on enwik7 in 14 s each way on an EPYC 7B13, against
+29 s on the dev laptop. The laptop is the slower machine, so laptop timings
+say little about the 50 h limit; release timings come from the cloud.
+
 ## How the contest limits are enforced
 
 `run.sh` enforces the limits rather than just measuring them. No VM is needed.

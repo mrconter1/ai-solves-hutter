@@ -5,3 +5,4 @@ date_utc,commit,attempt,input,input_bytes,archive_bytes,binary_bytes,total_bytes
 2026-10-07T11:15:15Z,cfb0047,cm1,enwik9,1000000000,180556196,18568,180574764,1.4446,+79.8%,5269,2454.8,2783,2783,,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics,pre-sandbox harness; dynamic glibc binary; compress time inflated by host RAM paging the WSL VM
 2026-10-07T14:42:52Z,060d8c9,cm1,enwik7,10000000,2449272,50584,2499856,1.9999,n/a,46.62,37.88,1739,1739,12,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics,first run under the sandboxed harness
 2026-10-07T15:11:53Z,6a3b87a,cm2,enwik8,100000000,22075602,50584,22126186,1.7701,n/a,372.53,325.61,1891,1891,122,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics,cm2 step 0 baseline = cm1
+2026-10-07T15:42:13Z,9cf9c8d,cm2,enwik7,10000000,2449272,46480,2495752,1.9966,n/a,14.15,14.17,1739,1739,12,yes,AMD EPYC 7B13,gcp smoke test

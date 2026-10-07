@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts one benchmark run on a Google Cloud VM and returns immediately.
 #
-#   bench/cloud/gcp-run.sh <attempt> [input=enwik9] [machine=c3d-standard-4]
+#   bench/cloud/gcp-run.sh <attempt> [input=enwik9] [machine=n2d-standard-4]
 #
 # The VM gets the committed tree (git archive of HEAD), runs bench/run.sh under
 # the same limits as locally, uploads the result row and logs to the bucket and
@@ -14,7 +14,7 @@ cd "$(dirname "$0")/../.."
 
 attempt=${1:?usage: gcp-run.sh <attempt> [input] [machine]}
 input=${2:-enwik9}
-machine=${3:-c3d-standard-4}
+machine=${3:-n2d-standard-4}
 project=${GCP_PROJECT:-ai-solves-hutter}
 zone=${GCP_ZONE:-europe-north1-a}
 bucket=${GCP_BUCKET:-ai-solves-hutter-runs}
