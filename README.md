@@ -25,8 +25,8 @@ award is `500,000 EUR x (1 - S/L)`, where `L` is the current record.
 
 ## Leaderboard
 
-Official enwik9 records, with this repo's entries (written by **Claude Opus 5.5**)
-in bold. Ranked by total size: compressor plus archive, in bytes. bpc is that
+Official enwik9 records, with this repo's entries in bold. Each entry is
+credited to the AI model that wrote it, taken from the attempt's `AUTHOR` file. Ranked by total size: compressor plus archive, in bytes. bpc is that
 total x 8 divided by the 10^9 input bytes. Lower is better.
 
 | Rank | Entry | Program | Date | Total bytes | bpc | vs record |
@@ -63,17 +63,25 @@ the others in [`results/results.csv`](results/results.csv).
 
 ```
 ai-solves-hutter/
+├── AGENTS.md             rules and workflow for any coding agent (or human)
 ├── attempts/             one compressor per folder
-│   └── cm1/              first baseline: context mixing in plain C (180.6 MB)
+│   ├── cm1/              first baseline: context mixing in plain C (180.6 MB)
+│   └── cm2/              in progress: steps 0-7 on top of cm1
 ├── bench/
 │   ├── fetch.sh          downloads enwik9, cuts the enwik8/enwik7 slices
 │   ├── limits.sh         the contest limits run.sh enforces
 │   ├── run.sh            full round trip under the limits, logs to results/
+│   ├── cloud/            release runs on a throwaway cloud VM
 │   └── tune.sh           (planned) parameter search on enwik7/enwik8
-├── tools/                (planned) analysis tools, e.g. where the bits go
+├── tools/bitcost/        where the bits go, per region type (text, links, templates, ...)
 ├── results/results.csv   every run of every attempt: sizes, bpc, time, RAM, disk, verified
 └── data/                 enwik9 and slices (gitignored, fetched by script)
 ```
+
+**Any model can contribute.** The repo is model agnostic: an attempt can be
+written by any coding agent. [`AGENTS.md`](AGENTS.md) holds the rules and
+workflow, and each attempt's `AUTHOR` file names the model that wrote it, which
+flows into the `model` column of the results and the leaderboard.
 
 **A folder is a release.** Each attempt lives in its own folder under
 `attempts/`, with its own `build.sh` and README, and is developed there one
