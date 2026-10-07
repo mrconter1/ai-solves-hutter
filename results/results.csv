@@ -6,3 +6,4 @@ date_utc,commit,attempt,model,input,input_bytes,archive_bytes,binary_bytes,total
 2026-10-07T14:42:52Z,060d8c9,cm1,Claude Opus 5.5,enwik7,10000000,2449272,50584,2499856,1.9999,n/a,46.62,37.88,1739,1739,12,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics,first run under the sandboxed harness
 2026-10-07T15:11:53Z,6a3b87a,cm2,Claude Opus 5.5,enwik8,100000000,22075602,50584,22126186,1.7701,n/a,372.53,325.61,1891,1891,122,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics,cm2 step 0 baseline = cm1
 2026-10-07T15:42:13Z,9cf9c8d,cm2,Claude Opus 5.5,enwik7,10000000,2449272,46480,2495752,1.9966,n/a,14.15,14.17,1739,1739,12,yes,AMD EPYC 7B13,gcp smoke test
+2026-10-07T17:36:51Z,9ea3aa7,cm2,Claude Opus 5.5,enwik7,10000000,2449272,46480,2495752,1.9966,n/a,12,12.51,1739,1739,12,yes,AMD EPYC 7B13,gcp smoke test after remote-run split
