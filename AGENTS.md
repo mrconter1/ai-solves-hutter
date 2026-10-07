@@ -38,6 +38,20 @@ size. The record and the prize threshold are in the README.
   rows.
 - Never edit or delete other runs in `results/results.csv`. Append only.
 
+## Layout
+
+```
+attempts/<name>/        one compressor per folder: source, build.sh, README.md, AUTHOR
+bench/run.sh            round trip under the contest limits (docs/rules.md)
+bench/remote-run.sh     one run on any fresh Linux machine
+bench/cloud/            Google Cloud adapter: a throwaway VM per run
+bench/fetch.sh          enwik9 plus the enwik8/enwik7 slices
+tools/bitcost/          where the bits go, per region type
+tools/edgecases.sh      round trip of awkward inputs (empty, random, zeros, ...)
+results/results.csv     every run of every attempt, append only
+docs/                   rules, running locally / in the cloud
+```
+
 ## Workflow
 
 ```bash

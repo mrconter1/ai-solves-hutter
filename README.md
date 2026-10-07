@@ -1,33 +1,10 @@
 # ai-solves-hutter
 
-An attempt at the [Hutter Prize](http://prize.hutter1.net/): losslessly compress
-`enwik9` (the first 10^9 bytes of an English Wikipedia dump) as small as possible.
+AI coding agents take on the [Hutter Prize](http://prize.hutter1.net/):
+losslessly compress `enwik9`, 1 GB of Wikipedia, as small as possible.
+Record: **100,424,672 bytes**. A prize needs under **99,420,425**.
 
-## The target
-
-| | Bytes | Bits/char |
-|---|---|---|
-| Current record (Vladimir Ivanov, fx2-cmix-T, 24 Jul 2026) | 100,424,672 | 0.803 |
-| Needed to claim a prize (1% better) | < 99,420,425 | < 0.795 |
-| Shannon's human estimate (~0.6 bpc) | ~75,000,000 | 0.6 |
-
-Score: `S = size(compressor) + size(self-extracting archive)`. When the
-compressor and decompressor are the same program, the FAQ counts it once. The
-award is `500,000 EUR x (1 - S/L)`, where `L` is the current record.
-
-## Rules that shape the design
-
-- One CPU core, no GPU.
-- Under 10 GB RAM and 100 GB disk.
-- About 50 hours each for compression and decompression on the test machine (a 2.7 GHz i7 class core).
-- The decompressor gets no outside input. Any dictionary or model weights count toward `S`.
-- Source code must be documented and open source.
-
-## Leaderboard
-
-Official enwik9 records, with this repo's entries in bold. Each entry is
-credited to the AI model that wrote it, taken from the attempt's `AUTHOR` file. Ranked by total size: compressor plus archive, in bytes. bpc is that
-total x 8 divided by the 10^9 input bytes. Lower is better.
+## Leaderboard (enwik9)
 
 | Rank | Entry | Program | Date | Total bytes | bpc | vs record |
 |---|---|---|---|---|---|---|
@@ -39,137 +16,30 @@ total x 8 divided by the 10^9 input bytes. Lower is better.
 | 6 | Saurabh Kumar | fast cmix | 2023-07-16 | 114,156,155 | 0.913 | +13.7% |
 | 7 | Artemiy Margaritov | starlit | 2021-05-31 | 115,352,938 | 0.923 | +14.9% |
 | 8 | Alexander Rhatushnyak | phda9 (2020 baseline) | 2019-07-04 | 116,673,681 | 0.933 | +16.2% |
-| **9** | **Claude Opus 5.5** | **[cm1](attempts/cm1)** | **2026-10-07** | **180,574,764**\* | **1.445** | **+79.8%** |
+| **9** | **Claude Opus 5.5** | **[cm1](attempts/cm1)** | **2026-10-07** | **180,574,764**¹ | **1.445** | **+79.8%** |
+| | *Claude Opus 5.5* | *[cm2](attempts/cm2), in progress* | | *~156,000,000*² | *~1.25* | *~+55%* |
 
-"vs record" is `S / record - 1`: how much bigger an entry is than the record.
-Official figures come from [prize.hutter1.net](http://prize.hutter1.net/).
+This repo's entries are in bold, credited to the AI model that wrote them.
+Total = compressor + archive; bpc = total x 8 / 10^9; "vs record" = how much
+bigger than the record. Official figures from
+[prize.hutter1.net](http://prize.hutter1.net/).
 
-\* Round-trip verified: decompressing gave back enwik9 byte for byte. Compression
-took 1 h 28 min and decompression 41 min, at 2.8 GB peak RAM, on an AMD Ryzen
-5 PRO 7540U laptop under WSL, pinned to one core. The compression time is
-inflated, because the host ran out of RAM and paged the WSL VM. This run
-predates the sandboxed harness and used an 18.5 KB dynamically linked binary.
-The self-contained static (musl) build of the same code is 50.6 KB, which
-would make the total 180,606,780 bytes.
+¹ Provisional: a laptop run, to be repeated in the cloud with the sandboxed harness.
+² Not measured: cm1's enwik9 size scaled by cm2's enwik8 gain so far.
 
-**To do:** cm1's enwik9 row needs a re-run under the sandboxed harness, with
-the static musl binary, so that every number in it comes from the current
-rules. Until then, treat the row as provisional.
-
-Development runs on the smaller enwik7 and enwik8 slices are logged with all
-the others in [`results/results.csv`](results/results.csv).
-
-## Layout
-
-```
-ai-solves-hutter/
-├── AGENTS.md             rules and workflow for any coding agent (or human)
-├── attempts/             one compressor per folder
-│   ├── cm1/              first baseline: context mixing in plain C (180.6 MB)
-│   └── cm2/              in progress: steps 0-7 on top of cm1
-├── bench/
-│   ├── fetch.sh          downloads enwik9, cuts the enwik8/enwik7 slices
-│   ├── limits.sh         the contest limits run.sh enforces
-│   ├── run.sh            full round trip under the limits, logs to results/
-│   ├── remote-run.sh     one run on any fresh Linux box (cloud VM or your own)
-│   ├── cloud/            Google Cloud adapter: throwaway VM per run
-│   └── tune.sh           (planned) parameter search on enwik7/enwik8
-├── tools/bitcost/        where the bits go, per region type (text, links, templates, ...)
-├── results/results.csv   every run of every attempt: sizes, bpc, time, RAM, disk, verified
-└── data/                 enwik9 and slices (gitignored, fetched by script)
-```
-
-**Any model can contribute.** The repo is model agnostic: an attempt can be
-written by any coding agent. [`AGENTS.md`](AGENTS.md) holds the rules and
-workflow, and each attempt's `AUTHOR` file names the model that wrote it, which
-flows into the `model` column of the results and the leaderboard.
-
-**A folder is a release.** Each attempt lives in its own folder under
-`attempts/`, with its own `build.sh` and README, and is developed there one
-step per commit. Once it posts a verified enwik9 result it is frozen, so its
-leaderboard row can always be reproduced from that folder. The next big jump
-starts as a new folder (`cm2/`, `cm3/`, ...). Attempts share no code: each one
-is a single self-contained program, as the contest requires.
-
-**How a step gets accepted.** Every change goes in behind a compile-time
-flag, so it can be switched off to compare. It is measured on enwik8 (a few
-minutes for a round trip), kept only if it gains, and recorded in the
-attempt's README. The full enwik9 run happens once per release.
-
-## Running
-
-Everything runs on Linux, because the contest takes Linux binaries. On Windows, use WSL:
+## Quick start
 
 ```bash
-bench/fetch.sh                      # ~300 MB download, unpacks to 1 GB
-bench/run.sh cm1                    # enwik7, about a minute
-bench/run.sh cm1 enwik9             # the real thing, about 2 hours for cm1
+bench/fetch.sh                      # download enwik9
+bench/run.sh cm2 enwik8             # round trip under the contest limits
+bench/cloud/gcp-run.sh cm2 enwik9   # enwik9 on a throwaway cloud VM
 ```
 
-From Git Bash, prefix `wsl` calls with `MSYS_NO_PATHCONV=1`, otherwise
-`/mnt/c/...` paths get rewritten to Windows paths.
+## More
 
-## Running on a clean machine (any cloud, or your own box)
+- [Rules, and how the benchmark enforces them](docs/rules.md)
+- [Running locally, on any Linux machine, or on Google Cloud](docs/running.md)
+- [Contributing with any AI model](AGENTS.md)
+- [Every run, with sizes, times and RAM](results/results.csv)
 
-Release runs should happen on a clean Linux machine, not a busy laptop. The
-machine-side logic is provider neutral:
-
-```bash
-git clone https://github.com/mrconter1/ai-solves-hutter && cd ai-solves-hutter
-sudo bench/remote-run.sh cm2 enwik9 out/      # installs the toolchain, fetches data, runs, verifies
-cat out/STATUS out/result.csv                 # OK + the result row
-```
-
-That works on any fresh Debian or Ubuntu machine with 16 GB of RAM: a VM on
-any cloud, a rented server or your own computer. Run it as root, because the
-sandbox uses `unshare --root`, which Ubuntu 24.04 restricts for normal users.
-
-**Google Cloud adapter.** `bench/cloud/` wraps that for Google Cloud, so a run
-can be started from a laptop without logging in to anything:
-
-```bash
-bench/cloud/gcp-run.sh cm2 enwik9             # starts a throwaway VM, returns at once
-bench/cloud/gcp-fetch.sh                      # list runs and their status
-bench/cloud/gcp-fetch.sh <run-id>             # log tail; appends the row when done
-```
-
-The VM gets the committed tree (`git archive HEAD`), runs
-`bench/remote-run.sh`, uploads the results to a bucket and deletes itself.
-`--max-run-duration` deletes it anyway if anything hangs, so it can't keep
-billing. The default machine is `n2d-standard-4` (AMD EPYC, 16 GB, about
-$0.19/h), so an enwik9 round trip for cm1 or cm2 costs about $1. An adapter
-for another provider only needs to do the same three things: get the tree
-onto a VM, run `bench/remote-run.sh`, and bring `out/` back.
-
-## How the contest limits are enforced
-
-`run.sh` enforces the limits rather than just measuring them. No VM is needed.
-The numbers live in [`bench/limits.sh`](bench/limits.sh).
-
-| Rule | How |
-|---|---|
-| One CPU core | `taskset` pins the process to a single CPU |
-| < 10 GB RAM | `ulimit -v` caps the address space at 10 GB, which is stricter than resident memory. Peak RSS is logged |
-| ~50 h per direction | `timeout` kills the run at `50 h / SPEED_FACTOR`. The factor converts to the contest's test machine (see below) |
-| < 100 GB disk | The sandbox's size is sampled every 5 s. The run is killed if it goes over, and the peak is logged |
-| No outside input | Each direction runs chrooted (`unshare --root`) in a fresh directory, with no network. The compressor sees only itself and the input. The decompressor sees only itself and the archive |
-| Self-contained program | The binary must be static, or `run.sh` refuses it. Inside the chroot there are no shared libraries anyway |
-| Lossless | The output is compared byte for byte with the original |
-
-A run that breaks a limit is still logged. `verified` then says why, for
-example `NO (compress over time limit)`.
-
-**Time calibration.** The prize times runs on "a 2.7 GHz i7" class core.
-cm2 on enwik7 took 14 s per direction on a Google Cloud n2d (AMD EPYC 7B13)
-and 29 s on the dev laptop under WSL. We assume the contest machine is about
-as fast as the n2d, so `SPEED_FACTOR=1.0` and the limit is 50 h. That
-assumption is unmeasured. A slower machine only makes the limit more generous
-than the contest's, which is why release timings come from the cloud.
-
-**Binary size.** glibc's static runtime adds about 730 KB to the score, which
-is 0.7% of the record. `build.sh` uses `musl-gcc` when it is installed
-(`sudo apt install musl-tools`), which brings cm1 down to tens of KB.
-
-## License
-
-[Unlicense](LICENSE) (public domain), the contest's preferred license.
+[Unlicense](LICENSE) (public domain).
