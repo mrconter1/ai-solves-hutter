@@ -11,8 +11,9 @@ An attempt at the [Hutter Prize](http://prize.hutter1.net/): losslessly compress
 | Needed to claim a prize (1% better) | < 99,420,425 | < 0.795 |
 | Shannon's human estimate (~0.6 bpc) | ~75,000,000 | 0.6 |
 
-Score: `S = size(compressor) + size(self-extracting archive)`. The prize is
-`500,000 EUR x (1 - S/L)` where `L` is the current record.
+Score: `S = size(compressor) + size(self-extracting archive)`. When the
+compressor and decompressor are the same program, the FAQ counts it once. The
+award is `500,000 EUR x (1 - S/L)`, where `L` is the current record.
 
 ## Rules that shape the design
 
@@ -22,24 +23,46 @@ Score: `S = size(compressor) + size(self-extracting archive)`. The prize is
 - The decompressor gets no outside input. Any dictionary or model weights count toward `S`.
 - Source code must be documented and open source.
 
+## Results so far
+
+Full log: [`results/results.csv`](results/results.csv). Every row was round-trip verified byte for byte.
+
+| Solution | Input | Archive bytes | bpc | Compress | Decompress | Peak RAM |
+|---|---|---|---|---|---|---|
+| [cm1](solutions/cm1) | enwik7 (10 MB) | 2,449,272 | 1.959 | 25 s | 20 s | 1.7 GB |
+| [cm1](solutions/cm1) | enwik8 (100 MB) | 22,075,602 | 1.766 | 237 s | 179 s | 1.9 GB |
+
+Times are from an AMD Ryzen 5 PRO 7540U laptop under WSL, pinned to one core.
+
 ## Layout
 
-| Folder | What |
+| Path | What |
 |---|---|
-| `data/` | `enwik9` and smaller test slices (gitignored, fetched by script) |
-| `solutions/<name>/` | One compressor per folder, each with its own `build.sh` and notes |
-| `bench/` | Download, build, round-trip, verify and log harness |
-| `results/results.csv` | Every run: date, solution, input, sizes, bpc, time, peak RAM, verified |
+| `data/` | `enwik9` plus `enwik8`/`enwik7` slices (gitignored, fetched by script) |
+| `solutions/<name>/` | One compressor per folder, each with its own `build.sh` and README |
+| `bench/fetch.sh` | Downloads enwik9 and cuts the slices |
+| `bench/run.sh` | Builds, compresses, decompresses, verifies and logs |
+| `results/results.csv` | One row per run: date, commit, sizes, bpc, time, peak RAM, verified |
 
 ## Running
 
-Everything runs under WSL (Ubuntu), because the contest takes Linux binaries:
+Everything runs on Linux, because the contest takes Linux binaries. On Windows, use WSL:
 
 ```bash
-bench/fetch.sh                      # downloads enwik9 into data/, makes enwik8 + 10 MB slices
-bench/run.sh <solution> [input]     # builds, compresses, decompresses, verifies, logs
+bench/fetch.sh                      # ~300 MB download, unpacks to 1 GB
+bench/run.sh cm1                    # enwik7, about a minute
+bench/run.sh cm1 enwik9             # the real thing, about 1.5 hours for cm1
 ```
 
-`run.sh` pins the process to one core (`taskset`), caps virtual memory
-(`ulimit -v`) and records peak RSS and CPU time with `/usr/bin/time -v`. That
-enforces the rules closely enough for development. No VM is needed.
+`run.sh` applies the contest limits rather than just measuring them. It pins
+the process to one core with `taskset`, caps the address space at 10 GB with
+`ulimit -v`, and records wall time and peak resident memory with
+`/usr/bin/time -v`. That is close enough for development, so no VM is needed.
+A run that fails verification still gets logged, with `verified=NO`.
+
+From Git Bash, prefix `wsl` calls with `MSYS_NO_PATHCONV=1`, otherwise
+`/mnt/c/...` paths get rewritten to Windows paths.
+
+## License
+
+[Unlicense](LICENSE) (public domain), the contest's preferred license.

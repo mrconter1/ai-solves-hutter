@@ -54,7 +54,7 @@ c_s=$(seconds "$(stat_field "$work/c.time" 'Elapsed (wall clock)')")
 d_s=$(seconds "$(stat_field "$work/d.time" 'Elapsed (wall clock)')")
 c_mb=$(( $(stat_field "$work/c.time" 'Maximum resident') / 1024 ))
 d_mb=$(( $(stat_field "$work/d.time" 'Maximum resident') / 1024 ))
-commit=$(git rev-parse --short HEAD)$(git diff --quiet HEAD -- "solutions/$sol" || echo "-dirty")
+commit=$(git rev-parse --short HEAD)$([ -z "$(git status --porcelain -- "solutions/$sol")" ] || echo "-dirty")
 cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ *//; s/,/ /g')
 
 # vs record only means something on the contest file

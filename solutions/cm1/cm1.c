@@ -7,7 +7,7 @@
  * How it works (the PAQ recipe, cut down to the essentials):
  *   1. The file is coded one bit at a time with a binary arithmetic coder.
  *   2. For every bit, a set of models each predict P(bit = 1) from a different
- *      context: order-1..6 byte contexts, the current word, the current word
+ *      context: order-1, 2, 3, 4, 6 and 8 byte contexts, the current word, the current word
  *      plus the previous one, and a long-range match model.
  *   3. A small neural network (logistic mixing) combines those predictions,
  *      with a weight set chosen by the partial byte and the match length.

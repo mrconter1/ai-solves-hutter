@@ -1,4 +1,4 @@
 date_utc,commit,solution,input,input_bytes,archive_bytes,binary_bytes,total_bytes,bpc,vs_record,compress_s,decompress_s,compress_peak_mb,decompress_peak_mb,verified,cpu
-2026-10-07T08:48:50Z,df135b8,cm1,enwik7,10000000,2603217,18568,2621785,2.0826,est -159.22%,25.69,23.43,1741,1741,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics
-2026-10-07T08:56:00Z,df135b8,cm1,enwik7,10000000,2449272,18568,2467840,1.9594,est -143.89%,25.33,20.15,1741,1741,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics
-2026-10-07T09:03:11Z,df135b8,cm1,enwik8,100000000,22075602,18568,22094170,1.7660,est -119.82%,237.12,178.97,1894,1894,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics
+2026-10-07T08:48:50Z,pre-f580500 (MIXER_LR 12/2^14),cm1,enwik7,10000000,2603217,18568,2621785,2.0826,est -159.22%,25.69,23.43,1741,1741,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics
+2026-10-07T08:56:00Z,f580500,cm1,enwik7,10000000,2449272,18568,2467840,1.9594,est -143.89%,25.33,20.15,1741,1741,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics
+2026-10-07T09:03:11Z,f580500,cm1,enwik8,100000000,22075602,18568,22094170,1.7660,est -119.82%,237.12,178.97,1894,1894,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics
