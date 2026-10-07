@@ -8,7 +8,7 @@
 # deletes itself. --max-run-duration deletes it anyway if anything hangs, so it
 # can never keep billing. Collect results with bench/cloud/gcp-fetch.sh.
 #
-# Settings (env): GCP_PROJECT, GCP_ZONE, GCP_BUCKET, MAX_HOURS, NOTE, CFLAGS
+# Settings (env): GCP_PROJECT, GCP_ZONE, GCP_BUCKET, MAX_HOURS, MAX_VMS (default 2), NOTE, CFLAGS. CFLAGS
 # (extra build flags, e.g. CFLAGS="-DTABLE_BITS=26" for a release-size run).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -38,6 +38,14 @@ max_hours=${MAX_HOURS:-$(awk -v h="$TIME_LIMIT_H" -v f="$SPEED_FACTOR" 'BEGIN{pr
 
 run_id="$(date -u +%Y%m%d-%H%M%S)-$attempt-$input"
 vm="hutter-$(echo "$run_id" | tr 'A-Z_' 'a-z-' | cut -c1-55)"
+
+# Cost guard: never more than MAX_VMS benchmark VMs at once.
+max_vms=${MAX_VMS:-2}
+running=$("$gcloud" compute instances list --project "$project" --filter="name:hutter-*" --format="value(name)" 2>/dev/null | grep -c . || true)
+if [ "$running" -ge "$max_vms" ]; then
+  echo "$running benchmark VMs already running (MAX_VMS=$max_vms); wait for one to finish" >&2
+  exit 2
+fi
 
 "$gcloud" storage buckets describe "gs://$bucket" --project "$project" >/dev/null 2>&1 ||
   "$gcloud" storage buckets create "gs://$bucket" --project "$project" --location "${zone%-*}" --uniform-bucket-level-access
