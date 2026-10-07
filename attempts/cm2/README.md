@@ -18,6 +18,8 @@ Build flags:
 | `-DUSE_BITHIST=0` | Step 1 off: plain probability counters, exactly as cm1 (default 1) |
 | `-DRUN_INPUT=0` | Step 1 without the per-model run input (default 1) |
 | `-DSM_LIMIT=n` | StateMap adaptation limit (default 1023) |
+| `-DUSE_BUCKETS=0` | Step 2 off: one block per hash, replaced on any mismatch, exactly as step 1 (default 1) |
+| `-DTABLE_BITS=n` | 2^n blocks of 16 bytes per context model. 24 = 256 MB per model, about 1.7 GB in total (default, dev). 26 = 1 GB per model, about 7.2 GB in total on enwik9 (release) |
 
 ## Ablation
 
@@ -27,11 +29,41 @@ Every step, measured on enwik8 (10^8 bytes). Archive bytes exclude the binary.
 |---|---|---|---|---|---|---|
 | 0 | Baseline: identical to cm1 | 22,075,602 | 1.766 | | 373 s / 326 s (laptop) | 1.9 GB |
 | 1 | Bit-history states + StateMaps, run inputs, block checks | 19,706,832 | 1.577 | **-10.7%** | 144 s / 142 s (cloud n2d) | 1.9 GB |
+| 2 | 4-way bucketed tables, least-history replacement (dev size) | 19,452,828 | 1.556 | **-1.3%** | 137 s / 139 s (cloud n2d) | 1.8 GB |
+| 2 | Same, release size (`TABLE_BITS=26`) | 19,406,054 | 1.552 | -1.5% | 148 s / 149 s (cloud n2d) | 6.3 GB |
 
 Times come from different machines until a cloud baseline exists: the cloud
 n2d core is about twice as fast as the laptop. On the same machine, step 1
 costs about 15% more time (enwik7: 32 s to 37 s compressing on the laptop).
 The bpc column is archive only; the leaderboard adds the binary.
+
+## Step 2: bucketed hash tables
+
+Step 1 replaced a block whenever another context hashed onto it. Step 2 groups
+blocks into **4-way buckets** of 64 bytes, exactly one cache line. A context
+looks for its check byte among the 4 blocks of its bucket. On a miss it takes
+over the block with the **least history**, judged by the counts in that
+block's first slot (slot 1 is updated on every visit). Ties go to the lowest
+way, so the encoder and decoder always pick the same block.
+
+Table size is now a build flag (`TABLE_BITS`). The order-1 and order-2 models
+have few contexts and get small tables (1 MB and 64 MB), which frees memory
+for the higher orders.
+
+| enwik7 test | Step 1 | Step 2 |
+|---|---|---|
+| Default tables (256 MB per model) | 2,117,804 | 2,113,216 (-0.2%) |
+| Squeezed tables (`TABLE_BITS=19`, 8 MB per model) | 2,194,838 | 2,140,420 (-2.5%) |
+
+The squeezed test shows what buckets are for: they matter once the tables are
+full, which is the normal state on enwik9 (1 GB of input into 1.7 GB of
+tables). On enwik8 the gain is 1.3% at the dev size and 1.5% at the release
+size, so most of step 2's value should show up on enwik9.
+
+Release runs use `CFLAGS="-DTABLE_BITS=26"`, passed through the runner
+(`CFLAGS=... bench/cloud/gcp-run.sh cm2 enwik9`) and recorded in the CSV note.
+On enwik8 that peaks at 6.3 GB; on enwik9 the input buffer adds 0.9 GB, about
+7.2 GB in total, under the 10 GB cap.
 
 ## Step 1: bit-history states
 
