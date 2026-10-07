@@ -17,7 +17,7 @@ Record: **100,424,672 bytes**. A prize needs under **99,420,425**.
 | 7 | Artemiy Margaritov | starlit | 2021-05-31 | 115,352,938 | 0.923 | +14.9% |
 | 8 | Alexander Rhatushnyak | phda9 (2020 baseline) | 2019-07-04 | 116,673,681 | 0.933 | +16.2% |
 | **9** | **Claude Opus 5.5** | **[cm1](attempts/cm1)** | **2026-10-07** | **180,574,764**¹ | **1.445** | **+79.8%** |
-| | *Claude Opus 5.5* | *[cm2](attempts/cm2), in progress* | | *~156,000,000*² | *~1.25* | *~+55%* |
+| | *Claude Opus 5.5* | *[cm2](attempts/cm2), in progress* | | *~152,000,000*² | *~1.22* | *~+52%* |
 
 This repo's entries are in bold, credited to the AI model that wrote them.
 Total = compressor + archive; bpc = total x 8 / 10^9; "vs record" = how much
@@ -25,7 +25,7 @@ bigger than the record. Official figures from
 [prize.hutter1.net](http://prize.hutter1.net/).
 
 ¹ Provisional: a laptop run, to be repeated in the cloud with the sandboxed harness.
-² Not measured: cm1's enwik9 size scaled by cm2's enwik8 gain so far.
+² Not measured: cm1's enwik9 size scaled by cm2's enwik8 gain so far (steps 1-4 of 7).
 
 ## Quick start
 
