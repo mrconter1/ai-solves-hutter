@@ -109,6 +109,28 @@ typedef uint64_t U64;
 #ifndef MIXER_LR
 #define MIXER_LR 4          /* mixer learning rate; swept 1..6 on enwik7, 4 was best */
 #endif
+/* Step 5: several first-layer mixers, each choosing its weight set by a
+ * different context, combined by a small second-layer mixer (MIX2). MIX2_SETS
+ * is a bitmask of the extra first-layer selectors (the step 3 one always runs):
+ *   1 order-1 byte    2 match length    4 order-3/6 confidence    8 parse kind
+ * APM_EXT adds two APMs (order-2 hashed, match state) to the final stage. */
+#ifndef MIX2
+#define MIX2 0
+#endif
+#ifndef MIX2_SETS
+#define MIX2_SETS 5
+#endif
+#ifndef MIX2_LR
+#define MIX2_LR 2
+#endif
+#ifndef APM_EXT
+#define APM_EXT 0
+#endif
+#ifndef APM_W0
+#define APM_W0 0            /* weight of the mixer output against each APM in the final average */
+#endif
+#define MBIT(n) (((MIX2_SETS) >> (n)) & 1)
+#define N_MIX1 (1 + (MIX2 ? MBIT(0) + MBIT(1) + MBIT(2) + MBIT(3) : 0))
 
 static void *xcalloc(size_t n, size_t sz) {
   void *p = calloc(n, sz);
@@ -232,34 +254,83 @@ static U32 statemap_init(int s) {
 typedef struct {
   int x[N_INPUTS];
   int *w;
-  int sel, pr;
+  int sel, pr, dot;
 } Mixer;
 
-static void mixer_init(Mixer *m, int nsel) {
-  m->w = xcalloc((size_t)nsel * N_INPUTS, sizeof(int));
+static int *mixer_weights(int nsel) {
+  int *w = xcalloc((size_t)nsel * N_INPUTS, sizeof(int));
   /* Each model's main input starts at weight 1/4; extra inputs start at 0. */
   for (int i = 0; i < nsel * N_INPUTS; ++i) {
     int j = i % N_INPUTS;
     int extra = j < N_CTX * INPUTS_PER_CTX && j % INPUTS_PER_CTX != 0;
-    m->w[i] = extra ? 0 : (1 << 16) / 4;
+    w[i] = extra ? 0 : (1 << 16) / 4;
   }
+  return w;
+}
+
+static void mixer_init(Mixer *m, int nsel) { m->w = mixer_weights(nsel); }
+
+/* dot product of the shared inputs with one weight set, clamped, in stretch units */
+static inline int mix_dot(const int *x, const int *w) {
+  int64_t dot = 0;
+  for (int i = 0; i < N_INPUTS; ++i) dot += (int64_t)x[i] * w[i];
+  int d = (int)(dot >> 16);
+  if (d > 2047) d = 2047;
+  if (d < -2047) d = -2047;
+  return d;
+}
+
+static inline void mix_train(const int *x, int *w, int err) {
+  for (int i = 0; i < N_INPUTS; ++i) w[i] += (x[i] * err + (1 << 15)) >> 16;
 }
 
 static int mixer_p(Mixer *m, int sel) {
   m->sel = sel * N_INPUTS;
+  m->dot = mix_dot(m->x, m->w + m->sel);
+  return m->pr = squash(m->dot);
+}
+
+static void mixer_update(Mixer *m, int y) {
+  mix_train(m->x, m->w + m->sel, ((y << 12) - m->pr) * MIXER_LR);
+}
+
+#if MIX2
+/* Step 5: extra first-layer mixers share the inputs of the main one but pick
+ * their own weight set; each learns from its own error, PAQ8 style. */
+typedef struct {
+  int *w;
+  int sel, dot, pr;
+} Mix1;
+
+/* Second layer: mixes the first-layer outputs (in stretch units). */
+typedef struct {
+  int x[N_MIX1 + 1];
+  int *w;
+  int sel, pr;
+} Mix2;
+
+static void mix2_init(Mix2 *m, int nsel) {
+  m->w = xcalloc((size_t)nsel * (N_MIX1 + 1), sizeof(int));
+  for (int s = 0; s < nsel; ++s)
+    for (int i = 0; i < N_MIX1; ++i) m->w[s * (N_MIX1 + 1) + i] = (1 << 16) / N_MIX1;
+}
+
+static int mix2_p(Mix2 *m, int sel) {
+  m->sel = sel * (N_MIX1 + 1);
   int64_t dot = 0;
-  for (int i = 0; i < N_INPUTS; ++i) dot += (int64_t)m->x[i] * m->w[m->sel + i];
+  for (int i = 0; i <= N_MIX1; ++i) dot += (int64_t)m->x[i] * m->w[m->sel + i];
   int d = (int)(dot >> 16);
   if (d > 2047) d = 2047;
   if (d < -2047) d = -2047;
   return m->pr = squash(d);
 }
 
-static void mixer_update(Mixer *m, int y) {
-  int err = ((y << 12) - m->pr) * MIXER_LR;
+static void mix2_update(Mix2 *m, int y) {
+  int err = ((y << 12) - m->pr) * MIX2_LR;
   int *w = m->w + m->sel;
-  for (int i = 0; i < N_INPUTS; ++i) w[i] += (m->x[i] * err + (1 << 15)) >> 16;
+  for (int i = 0; i <= N_MIX1; ++i) w[i] += (m->x[i] * err + (1 << 15)) >> 16;
 }
+#endif
 
 /* ---------- APM: maps (probability, context) to a refined probability ---------- */
 
@@ -341,6 +412,14 @@ typedef struct {
 
   Mixer mx;
   Apm a1, a2;
+#if MIX2
+  Mix1 m1[N_MIX1 - 1];  /* the extra first-layer mixers */
+  int m1nsel[N_MIX1 - 1];
+  Mix2 m2;
+#endif
+#if APM_EXT
+  Apm a3, a4;
+#endif
   int pr_mix, pr;
 } Predictor;
 
@@ -372,6 +451,20 @@ static void predictor_init(Predictor *P, U64 cap, U8 *extbuf) {
   mixer_init(&P->mx, 256 * 4 * (MIXSEL_PARSE ? 4 : 1));
   apm_init(&P->a1, 256);
   apm_init(&P->a2, 1 << 16);
+#if MIX2
+  {
+    /* weight-set counts of the extra selectors, in MIX2_SETS bit order */
+    static const int nsel[4] = {1 << 16, 16 * 256, 64 * 8, 8 * 256};
+    int j = 0;
+    for (int b = 0; b < 4; ++b)
+      if (MBIT(b)) { P->m1nsel[j] = nsel[b]; P->m1[j].w = mixer_weights(nsel[b]); ++j; }
+  }
+  mix2_init(&P->m2, 256);
+#endif
+#if APM_EXT
+  apm_init(&P->a3, 1 << 16);
+  apm_init(&P->a4, 33 * 256);
+#endif
 }
 
 /* choose the 16-counter block for each model; called at each nibble boundary */
@@ -573,9 +666,41 @@ static int predict(Predictor *P) {
 #else
   P->pr_mix = mixer_p(m, (int)P->c0 + 256 * lenb);
 #endif
+#if MIX2
+  {
+    int c0 = (int)P->c0, j = 0;
+    Mix2 *m2 = &P->m2;
+    m2->x[0] = m->dot;
+#define MIX1_RUN(S_) do { Mix1 *q = &P->m1[j]; q->sel = (S_) * N_INPUTS; \
+      q->dot = mix_dot(m->x, q->w + q->sel); q->pr = squash(q->dot); \
+      m2->x[++j] = q->dot; } while (0)
+    if (MBIT(0)) MIX1_RUN(c0 | (int)((P->c4 & 0xff) << 8));
+    if (MBIT(1)) MIX1_RUN((P->mlen < 15 ? P->mlen : 15) * 256 + c0);
+#if USE_BITHIST
+    if (MBIT(2)) {
+      int n2 = st_n0[P->st[2]] + st_n1[P->st[2]], n4 = st_n0[P->st[4]] + st_n1[P->st[4]];
+#define CBUCKET(n) ((n) == 0 ? 0 : (n) < 2 ? 1 : (n) < 4 ? 2 : (n) < 8 ? 3 : (n) < 16 ? 4 : (n) < 32 ? 5 : (n) < 64 ? 6 : 7)
+      MIX1_RUN((CBUCKET(n2) * 8 + CBUCKET(n4)) * 8 + P->bitpos);
+    }
+#else
+    if (MBIT(2)) MIX1_RUN(P->bitpos);
+#endif
+    if (MBIT(3)) MIX1_RUN(P->kind * 256 + c0);
+#undef MIX1_RUN
+    m2->x[N_MIX1] = 256;
+    P->pr_mix = mix2_p(m2, c0);
+  }
+#endif
   int p1 = apm_p(&P->a1, P->pr_mix, (int)P->c0);
   int p2 = apm_p(&P->a2, P->pr_mix, (int)(P->c0 | ((P->c4 & 0xff) << 8)));
+#if APM_EXT
+  int p3 = apm_p(&P->a3, P->pr_mix, (int)(hash2(P->c4 & 0xffff, P->c0) >> 16));
+  int ms = P->mbit < 0 ? 0 : 1 + P->mbit + 2 * (P->mlen < 15 ? P->mlen : 15);
+  int p4 = apm_p(&P->a4, P->pr_mix, ms * 256 + (int)P->c0);
+  int pr = (P->pr_mix * APM_W0 + p1 + p2 + p3 + p4 + (APM_W0 + 4) / 2) / (APM_W0 + 4);
+#else
   int pr = (P->pr_mix * 2 + p1 + p2 + 2) >> 2;
+#endif
   if (pr < 1) pr = 1;
   if (pr > 4095) pr = 4095;
   return P->pr = pr;
@@ -598,8 +723,19 @@ static void update(Predictor *P, int y) {
     counter_update(&P->msm[l * 2 + P->mbit], y, 1023);
   }
   mixer_update(&P->mx, y);
+#if MIX2
+  for (int j = 0; j < N_MIX1 - 1; ++j) {
+    Mix1 *q = &P->m1[j];
+    mix_train(P->mx.x, q->w + q->sel, ((y << 12) - q->pr) * MIXER_LR);
+  }
+  mix2_update(&P->m2, y);
+#endif
   apm_update(&P->a1, y, 7);
   apm_update(&P->a2, y, 7);
+#if APM_EXT
+  apm_update(&P->a3, y, 7);
+  apm_update(&P->a4, y, 7);
+#endif
 
   P->c0 = (P->c0 << 1) | (U32)y;
   P->bitpos++;
