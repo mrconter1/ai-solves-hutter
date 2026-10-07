@@ -35,6 +35,7 @@ enwik9), plus 64 MB of match pointers. That's about 3.2 GB on enwik9.
 | enwik7 | 2,449,272 | 1.959 | |
 | enwik8 | 22,075,602 | 1.766 | |
 | enwik9 | 180,556,196 | 1.444 | Round-trip verified. 180,574,764 total with the 18.5 KB dynamic binary it ran with |
+| enwik9, cloud re-run | 180,556,196 | 1.444 | Sandboxed harness on Google Cloud n2d (EPYC 7B13), static musl binary 46,480 bytes: **180,602,676 total**, 19 min compress, 18 min decompress, 2.8 GB peak. This is the leaderboard row |
 
 ## Build notes
 
