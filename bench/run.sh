@@ -121,7 +121,8 @@ d_s=$(seconds "$(stat_field "$work/d.time" 'Elapsed (wall clock)')")
 c_mb=$(( $(stat_field "$work/c.time" 'Maximum resident') / 1024 ))
 d_mb=$(( $(stat_field "$work/d.time" 'Maximum resident') / 1024 ))
 disk_mb=$(( $(sort -n "$work/c.disk" "$work/d.disk" | tail -1) / 1000000 ))
-commit=$(git rev-parse --short HEAD)$([ -z "$(git status --porcelain -- "attempts/$sol")" ] || echo "-dirty")
+# COMMIT can be passed in when running from an exported tree (cloud runs have no .git)
+commit=${COMMIT:-$(git rev-parse --short HEAD)$([ -z "$(git status --porcelain -- "attempts/$sol")" ] || echo "-dirty")}
 cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ *//; s/,/ /g')
 
 # How much bigger than the record; only meaningful on the contest file.
