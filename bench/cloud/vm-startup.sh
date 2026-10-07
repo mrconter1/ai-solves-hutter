@@ -13,6 +13,7 @@ ATTEMPT=$(md attributes/attempt)
 INPUT=$(md attributes/input)
 export COMMIT=$(md attributes/commit)
 export NOTE=$(md attributes/note || true)
+export CFLAGS=$(md attributes/cflags || true)
 ZONE=$(md zone | awk -F/ '{print $NF}')
 RUN="gs://$BUCKET/runs/$RUN_ID"
 

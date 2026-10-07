@@ -4,6 +4,7 @@
 #
 #   bench/run.sh <attempt> [input=enwik7]
 #   NOTE="..." bench/run.sh ...    adds a free-text note to the CSV row
+#   CFLAGS="-DX=1" bench/run.sh ...  extra build flags, recorded in the note
 #
 # Each direction runs in its own sandbox. The limits come from bench/limits.sh:
 #
@@ -27,6 +28,8 @@ input=${2:-enwik7}
 record=100424672          # current enwik9 record (Ivanov, 24 Jul 2026)
 core=${CORE:-2}
 NOTE=${NOTE:-}
+# Build flags (CFLAGS) reach build.sh through the environment; record them.
+[ -n "${CFLAGS:-}" ] && NOTE="${NOTE:+$NOTE; }cflags=$CFLAGS"
 mem_kb=$((MEM_LIMIT_GB * 1024 * 1024))
 time_limit_s=$(awk -v h="$TIME_LIMIT_H" -v f="$SPEED_FACTOR" 'BEGIN{printf "%d", h*3600/f}')
 disk_limit=$((DISK_LIMIT_GB * 1000 * 1000 * 1000))

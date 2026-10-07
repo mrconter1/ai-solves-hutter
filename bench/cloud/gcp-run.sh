@@ -8,7 +8,8 @@
 # deletes itself. --max-run-duration deletes it anyway if anything hangs, so it
 # can never keep billing. Collect results with bench/cloud/gcp-fetch.sh.
 #
-# Settings (env): GCP_PROJECT, GCP_ZONE, GCP_BUCKET, MAX_HOURS, NOTE.
+# Settings (env): GCP_PROJECT, GCP_ZONE, GCP_BUCKET, MAX_HOURS, NOTE, CFLAGS
+# (extra build flags, e.g. CFLAGS="-DTABLE_BITS=26" for a release-size run).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -19,6 +20,8 @@ project=${GCP_PROJECT:-ai-solves-hutter}
 zone=${GCP_ZONE:-europe-north1-a}
 bucket=${GCP_BUCKET:-ai-solves-hutter-runs}
 note=${NOTE:-gcp $machine}
+cflags=${CFLAGS:-}
+case "$cflags$note" in *,*) echo "NOTE and CFLAGS must not contain commas" >&2; exit 1;; esac
 gcloud=${GCLOUD:-gcloud}
 command -v "$gcloud" >/dev/null 2>&1 || gcloud="$LOCALAPPDATA/google-cloud-sdk/bin/gcloud.cmd"
 
@@ -50,7 +53,7 @@ rm -rf "$tmp"
   --boot-disk-size 50GB --boot-disk-type pd-balanced \
   --scopes cloud-platform \
   --max-run-duration "${max_hours}h" --instance-termination-action DELETE \
-  --metadata "bucket=$bucket,run-id=$run_id,attempt=$attempt,input=$input,commit=$commit,note=$note" \
+  --metadata "bucket=$bucket,run-id=$run_id,attempt=$attempt,input=$input,commit=$commit,note=$note,cflags=$cflags" \
   --metadata-from-file startup-script=bench/cloud/vm-startup.sh \
   --format "value(name)"
 

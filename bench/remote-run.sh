@@ -14,6 +14,7 @@
 # Run as root, or make sure unprivileged user namespaces are allowed: the
 # sandbox in run.sh uses `unshare --root`, which Ubuntu 24.04 restricts.
 # Pass COMMIT=<hash> when the tree has no .git (an exported archive).
+# CFLAGS (extra build flags) and NOTE pass through to bench/run.sh.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 attempt=${1:?usage: remote-run.sh <attempt> [input] [outdir]}

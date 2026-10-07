@@ -43,7 +43,20 @@ typedef uint64_t U64;
 #endif
 
 #if USE_BITHIST
-#define TABLE_BITS 24       /* 2^24 blocks x 16 bytes = 256 MB per context model */
+/* Step 2: table size per context model is 2^TABLE_BITS blocks of 16 bytes.
+ * 24 = 256 MB per model, about 1.7 GB in total (dev default, fits the laptop).
+ * 26 = 1 GB per model, about 7.2 GB in total (release, under the 10 GB cap).
+ * The order-1 and order-2 models have few contexts and get small tables. */
+#ifndef TABLE_BITS
+#define TABLE_BITS 24
+#endif
+/* Step 2: 4-way buckets. A context's block is looked up in a 64-byte bucket of
+ * 4 blocks (one cache line), matched by its check byte; on a miss the block
+ * with the least history is replaced. 0 = step 1 behaviour (one block per
+ * hash, replaced on any mismatch). */
+#ifndef USE_BUCKETS
+#define USE_BUCKETS 1
+#endif
 #ifndef RUN_INPUT
 #define RUN_INPUT 1         /* also feed a run input per model */
 #endif
@@ -259,6 +272,7 @@ typedef U32 Slot;      /* a probability counter */
 typedef struct {
   /* context models: blocks of 16 slots, one block per context and nibble */
   Slot *table[N_CTX];
+  int tbits[N_CTX];    /* log2 of the number of blocks per model */
   U32 ctxhash[N_CTX];  /* per-byte context hash */
   Slot *slot[N_CTX];   /* current block */
   int limit[N_CTX];
@@ -289,7 +303,14 @@ typedef struct {
 static void predictor_init(Predictor *P, U64 cap) {
   memset(P, 0, sizeof *P);
   for (int i = 0; i < N_CTX; ++i) {
-    P->table[i] = xcalloc((size_t)16 << TABLE_BITS, sizeof(Slot));
+#if USE_BITHIST && USE_BUCKETS
+    P->tbits[i] = i == 0 ? (TABLE_BITS < 16 ? TABLE_BITS : 16) : i == 1 ? (TABLE_BITS < 22 ? TABLE_BITS : 22) : TABLE_BITS;
+#else
+    P->tbits[i] = TABLE_BITS;
+#endif
+    /* aligned to 64 bytes so that a 4-block bucket is exactly one cache line */
+    U8 *raw = xcalloc(((size_t)16 << P->tbits[i]) * sizeof(Slot) + 64, 1);
+    P->table[i] = (Slot *)(raw + ((64 - ((uintptr_t)raw & 63)) & 63));
     P->limit[i] = i < 2 ? 1023 : 255;
 #if USE_BITHIST
     for (int s = 0; s < 256; ++s) P->sm[i][s] = s < n_states ? statemap_init(s) : 1u << 31;
@@ -310,13 +331,36 @@ static void select_slots(Predictor *P) {
   U32 nib = P->bitpos == 0 ? 0 : P->c0; /* 0 at byte start, 16..31 at mid byte */
   for (int i = 0; i < N_CTX; ++i) {
     U32 h = hash2(P->ctxhash[i], nib + 1);
-    P->slot[i] = P->table[i] + ((size_t)(h >> (32 - TABLE_BITS)) << 4);
 #if USE_BITHIST
     /* Slot 0 is never used for a bit (positions are 1..15), so it holds an
        8-bit check of the context. A mismatch means another context owns the
        block: start it fresh rather than reuse its histories. */
     U8 check = (U8)(h & 255);
+#if USE_BUCKETS
+    /* 4-way bucket: take the block whose check matches; otherwise replace the
+       one with the least history, judged by the counts in its first slot
+       (slot 1 is updated on every visit to the block). Ties go to the lowest
+       way, so encoder and decoder always pick the same block. */
+    Slot *b = P->table[i] + ((size_t)(h >> (32 - (P->tbits[i] - 2))) << 6);
+    int way = -1, victim = 0, best = 1 << 30;
+    for (int w = 0; w < 4; ++w) {
+      Slot *blk = b + (w << 4);
+      if (blk[0] == check) { way = w; break; }
+      int pri = st_n0[blk[1]] + st_n1[blk[1]];
+      if (pri < best) { best = pri; victim = w; }
+    }
+    if (way < 0) {
+      way = victim;
+      memset(b + (way << 4), 0, 16);
+      b[way << 4] = check;
+    }
+    P->slot[i] = b + (way << 4);
+#else
+    P->slot[i] = P->table[i] + ((size_t)(h >> (32 - P->tbits[i])) << 4);
     if (P->slot[i][0] != check) { memset(P->slot[i], 0, 16); P->slot[i][0] = check; }
+#endif
+#else
+    P->slot[i] = P->table[i] + ((size_t)(h >> (32 - P->tbits[i])) << 4);
 #endif
   }
 }
