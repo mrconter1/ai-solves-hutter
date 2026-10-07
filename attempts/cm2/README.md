@@ -14,7 +14,7 @@ Build flags:
 
 | Flag | Effect |
 |---|---|
-| `-DCOST_LOG` | Compression also writes `<archive>.cost`: one float32 per input byte, the bits spent on it. The archive is unchanged. Read by [tools/bitcost](../../tools/bitcost) |
+| `-DCOST_LOG` | Compression also writes `<archive>.cost`: one float32 per coded byte, the bits spent on it. The archive is unchanged. Read by [tools/bitcost](../../tools/bitcost); lines up with the input only with `-DUSE_PREPROC=0` |
 | `-DUSE_BITHIST=0` | Step 1 off: plain probability counters, exactly as cm1 (default 1) |
 | `-DRUN_INPUT=0` | Step 1 without the per-model run input (default 1) |
 | `-DSM_LIMIT=n` | StateMap adaptation limit (default 1023) |
@@ -23,6 +23,11 @@ Build flags:
 | `-DWIKICTX=mask` | Step 3 models: 1 word + parse state, 2 order-2 + parse state, 4 line/table column, 8 number, 16 sparse (bytes 2-3 back), 32 word + word before previous. Default 37 (1+4+32); 0 = step 2 exactly |
 | `-DMIXSEL_PARSE=0` | Step 3 off for the mixer: weight set chosen without the parse state (default 1) |
 | `-DEXTRA_TABLE_BITS=n` | Table size cap for the step 3 models (default 23, 128 MB each) |
+| `-DUSE_PREPROC=0` | Step 4 off: no transform, old archive format, exactly as step 3 (default 1) |
+| `-DPP_CAPS=0`, `-DPP_ENT=0`, `-DPP_DICT=0` | Step 4 parts off one by one: capital flags, entity bytes, word dictionary (default all 1) |
+| `-DPP_K1=n` | Words with a one-byte code (default 32) |
+| `-DPP_MINLEN=n`, `-DPP_MINCOUNT=n` | Shortest word and fewest occurrences worth a code (default 2 and 8) |
+| `-DPP_SORT=n` | Order of the 2-byte codes: 0 by frequency, 1 alphabetical (default), 2 by suffix |
 
 ## Ablation
 
@@ -36,11 +41,82 @@ Every step, measured on enwik8 (10^8 bytes). Archive bytes exclude the binary.
 | 2 | Same, release size (`TABLE_BITS=26`) | 19,406,054 | 1.552 | -1.5% | 148 s / 149 s (cloud n2d) | 6.3 GB |
 | 3 | Wiki parse state: 3 structure models + parse-based mixer selection (`WIKICTX=37`, dev size) | 19,056,553 | 1.525 | **-2.0%** | 215 s / 212 s (cloud n2d) | 2.1 GB |
 | 3 | Variant: all 5 structure models (`WIKICTX=55`), not kept | 19,008,680 | 1.521 | -2.3% | 255 s / 255 s (cloud n2d) | 2.4 GB |
+| 4 | Reversible transform: capital flags, entity bytes, word dictionary (32 one-byte codes) | 18,602,720 | 1.488 | **-2.4%** | 178 s / 170 s (cloud n2d) | 2.1 GB |
+| 4 | Variant: 40 one-byte codes (`PP_K1=40`), not kept | 18,664,637 | 1.493 | -2.1% | 181 s / 183 s (cloud n2d) | 2.1 GB |
 
 Times come from different machines until a cloud baseline exists: the cloud
 n2d core is about twice as fast as the laptop. On the same machine, step 1
 costs about 15% more time (enwik7: 32 s to 37 s compressing on the laptop).
 The bpc column is archive only; the leaderboard adds the binary.
+
+## Step 4: reversible text transform
+
+`preproc.c` (included by `cm2.c`, so cm2 is still one program) rewrites the
+input before the model sees it, and the decompressor runs the inverse after
+decoding:
+
+- **Capital flags.** `The` becomes a CAP flag plus `the`, `THE` an ALLCAP
+  flag plus `the`. All forms of a word then share statistics. Mixed-case words
+  (`McDonald`, `iPhone`) stay as they are.
+- **Entity bytes.** `&amp;` `&quot;` `&lt;` `&gt;` become one byte each.
+- **Word dictionary.** The compressor counts the words in the input and gives
+  codes to the most valuable ones (occurrences x length): the top 32 get a
+  one-byte code, the rest a two-byte code (a prefix byte plus a byte in
+  0x80..0xff, sorted alphabetically). The dictionary is sent at the start of
+  the coded stream, one word per line, so the model compresses it like text.
+
+Every flag, entity byte and code is a byte value that never occurs in the
+input (enwik9 has 50 of them), so nothing needs escaping. A 38-byte raw header
+lists the free byte values; both sides derive the same roles from it. When too
+few are free (binary data) the transform switches itself off. The compressor
+also runs the inverse over the transformed stream and compares it with the
+input before using it, so a transform bug falls back to "off" instead of a
+broken archive. The word model treats a code as a whole word and ignores the
+capital flags; the step 3 parse state is unaffected, because codes never look
+like ASCII punctuation.
+
+On enwik8 the transform shortens the coded stream by about a quarter
+(100,000,000 to 76,419,491 bytes), which is also why it is 17% faster than
+step 3. The dictionary there has 1,696 words, which is all the code space the
+free byte values allow (13 prefix bytes x 128 + 32). A bigger dictionary would
+need more code space, for example 3-byte codes; that is left for later. Memory: the compressor briefly holds the
+input plus the transformed stream plus a 128 MB word table, then frees the
+input before the model starts, and the model reuses the transformed stream as
+its history buffer, so peak RAM does not grow.
+
+**Per idea on enwik7** (step 3: 2,070,142 bytes; times are laptop compress):
+
+| Variant | enwik7 bytes | Change | Note |
+|---|---|---|---|
+| Capital flags only | 2,071,037 | +0.04% | alone it does not pay |
+| Entity bytes only | 2,068,270 | -0.09% | |
+| Capitals + entities | 2,069,119 | -0.05% | |
+| Dictionary only, no capital flags | 2,079,867 | +0.47% | codes miss every capitalised word |
+| All three, 2-byte codes only, alphabetical | 2,067,661 | -0.12% | |
+| Same, codes by frequency | 2,078,036 | +0.38% | |
+| Same, codes by suffix | 2,074,805 | +0.23% | |
+| 16 one-byte codes | 2,059,150 | -0.53% | |
+| 32 one-byte codes | 2,055,696 | -0.70% | |
+| 40 one-byte codes | 2,055,402 | -0.71% | |
+| 32 one-byte codes, words of 2+ letters | **2,046,119** | **-1.16%** | **kept** |
+| 28 / 36 / 40 one-byte codes, 2+ letters | 2,046,411 / 2,045,208 / 2,045,321 | -1.15% to -1.20% | a plateau |
+| 32 one-byte codes, at most 1000 words | 2,055,839 | -0.69% | |
+| words of 4+ / 5+ letters only | 2,075,251 / 2,082,769 | +0.25% / +0.61% | |
+
+What mattered: one-byte codes for the most frequent short words (`the`, `of`,
+`and`, `in`), which only pay together with capital flags. The two-byte codes
+add little on their own. Without the flags the dictionary misses every
+capitalised word and loses. On enwik8 the gain doubles to -2.4%, and 32 beats
+40 one-byte codes there, so 32 is the default.
+
+The binary grows from 50.6 KB to 58.8 KB. Total (archive + binary) on enwik8
+goes from 19,107,129 to 18,661,488 bytes (-2.33%).
+
+`tools/edgecases.sh` has four new cases for the transform: mixed case forms and
+broken entities next to UTF-8 letters, words longer than 255 letters, input
+containing every byte value (the transform must switch off) and input using
+most control bytes (few free values left). All 11 cases round-trip, and the
+transform is confirmed active on the text cases.
 
 ## Step 3: wiki structure contexts
 

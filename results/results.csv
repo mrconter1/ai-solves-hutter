@@ -12,3 +12,5 @@ date_utc,commit,attempt,model,input,input_bytes,archive_bytes,binary_bytes,total
 2026-10-07T18:07:16Z,6695964,cm2,Claude Opus 5.5,enwik8,100000000,19406054,50576,19456630,1.5565,n/a,148.08,149.37,6312,6312,119,yes,AMD EPYC 7B13,cm2 step 2: buckets (release size); cflags=-DTABLE_BITS=26
 2026-10-07T18:32:53Z,99cd13a,cm2,Claude Opus 5.5,enwik8,100000000,19008680,50576,19059256,1.5247,n/a,254.92,255.37,2397,2402,119,yes,AMD EPYC 7B13,cm2 step 3: wiki contexts (dev size)
 2026-10-07T18:50:25Z,fe78203,cm2,Claude Opus 5.5,enwik8,100000000,19056553,50576,19107129,1.5286,n/a,215.15,212.03,2147,2147,119,yes,AMD EPYC 7B13,cm2 step 3: wiki contexts WIKICTX=37 (dev size)
+2026-10-07T19:46:35Z,d673c5a,cm2,Claude Opus 5.5,enwik8,100000000,18602720,58768,18661488,1.4929,n/a,177.62,170.28,2125,2125,118,yes,AMD EPYC 7B13,cm2 step 4: preprocessing (dev size)
+2026-10-07T19:47:09Z,d673c5a,cm2,Claude Opus 5.5,enwik8,100000000,18664637,58768,18723405,1.4979,n/a,181.41,183.06,2130,2130,118,yes,AMD EPYC 7B13,cm2 step 4: preprocessing PP_K1=40 (dev size); cflags=-DPP_K1=40
