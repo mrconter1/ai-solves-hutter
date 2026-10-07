@@ -13,9 +13,11 @@
  *   1. The file is coded one bit at a time with a binary arithmetic coder.
  *   2. For every bit, a set of models each predict P(bit = 1) from a different
  *      context: order-1, 2, 3, 4, 6 and 8 byte contexts, the current word, the current word
- *      plus the previous one, and a long-range match model.
+ *      plus the previous one, wiki structure contexts (step 3) and a
+ *      long-range match model.
  *   3. A small neural network (logistic mixing) combines those predictions,
- *      with a weight set chosen by the partial byte and the match length.
+ *      with a weight set chosen by the partial byte, the match length and a
+ *      coarse wiki parse state.
  *   4. An APM (secondary estimation) refines the mixed probability using the
  *      order-1 context.
  *   5. Every component learns online from the bit just coded, so the
@@ -70,7 +72,24 @@ typedef uint64_t U64;
 #endif
 #define MATCH_HASH_BITS 24  /* 64 MB of match pointers */
 #define MATCH_MIN 7         /* bytes of context hashed to find a match */
-#define N_CTX 8             /* hashed context models */
+/* Step 3: extra context models built on a small wiki parse state (inside a
+ * link or template, which part of it, table column, line type, numbers).
+ * WIKICTX is a bitmask; each bit adds one hashed model (see byte_update):
+ *   1 word + parse state     2 order-2 + parse state   4 line/table column
+ *   8 number                16 sparse: bytes 2-3 back  32 word + word before previous
+ * MIXSEL_PARSE=1 also picks the mixer weight set by a coarse parse state. */
+#ifndef WIKICTX
+#define WIKICTX 55          /* 1+2+4+16+32; the number model (8) did not help */
+#endif
+#ifndef MIXSEL_PARSE
+#define MIXSEL_PARSE 1
+#endif
+#ifndef EXTRA_TABLE_BITS
+#define EXTRA_TABLE_BITS 23 /* table size cap for the step 3 models */
+#endif
+#define WBIT(n) (((WIKICTX) >> (n)) & 1)
+#define N_EXTRA (WBIT(0) + WBIT(1) + WBIT(2) + WBIT(3) + WBIT(4) + WBIT(5))
+#define N_CTX (8 + N_EXTRA)  /* hashed context models */
 #define N_INPUTS (N_CTX * INPUTS_PER_CTX + 2) /* + match model + bias */
 #ifndef MIXER_LR
 #define MIXER_LR 4          /* mixer learning rate; swept 1..6 on enwik7, 4 was best */
@@ -287,7 +306,16 @@ typedef struct {
   U32 c0;              /* partial byte with leading 1 */
   int bitpos;
   U32 c4, c8;          /* last 8 bytes */
-  U32 word, prevword;
+  U32 word, prevword, pprevword;
+
+  /* step 3 parse state, updated per byte */
+  U8 atline, linefirst, col;     /* line start, first byte of the line, table column */
+  U8 inlink, linkpart;           /* inside [[...]], 0 target / 1 display text */
+  U8 tdepth, tpart;              /* {{...}} depth (capped), 0 name / 1 param / 2 value */
+  U8 intag;                      /* inside <...> */
+  U8 numlen;                     /* length of the current digit run */
+  U32 numhash, numctx;           /* digits so far, the two bytes before the run */
+  int kind;                      /* coarse parse state, 0..7 */
 
   /* match model */
   U32 *mtab;
@@ -305,6 +333,7 @@ static void predictor_init(Predictor *P, U64 cap) {
   for (int i = 0; i < N_CTX; ++i) {
 #if USE_BITHIST && USE_BUCKETS
     P->tbits[i] = i == 0 ? (TABLE_BITS < 16 ? TABLE_BITS : 16) : i == 1 ? (TABLE_BITS < 22 ? TABLE_BITS : 22) : TABLE_BITS;
+    if (i >= 8 && P->tbits[i] > EXTRA_TABLE_BITS) P->tbits[i] = EXTRA_TABLE_BITS;
 #else
     P->tbits[i] = TABLE_BITS;
 #endif
@@ -321,7 +350,8 @@ static void predictor_init(Predictor *P, U64 cap) {
   P->buf = xcalloc(P->cap, 1);
   P->mtab = xcalloc((size_t)1 << MATCH_HASH_BITS, sizeof(U32));
   P->c0 = 1;
-  mixer_init(&P->mx, 256 * 4);
+  P->atline = 1;
+  mixer_init(&P->mx, 256 * 4 * (MIXSEL_PARSE ? 4 : 1));
   apm_init(&P->a1, 256);
   apm_init(&P->a2, 1 << 16);
 }
@@ -375,9 +405,36 @@ static void byte_update(Predictor *P, int c) {
   if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
     P->word = hash2(P->word, (U32)(c | 32));
   } else if (P->word) {
+    P->pprevword = P->prevword;
     P->prevword = P->word;
     P->word = 0;
   }
+
+#if WIKICTX || MIXSEL_PARSE
+  /* step 3: wiki parse state. Heuristic, but deterministic: it only looks at
+     bytes already coded, so the decoder tracks exactly the same state. */
+  int prev = (int)((P->c4 >> 8) & 0xff);
+  if (c == 10) { P->atline = 1; P->linefirst = 0; P->col = 0; }
+  else if (P->atline) { P->atline = 0; P->linefirst = (U8)c; }
+  if (c == '[' && prev == '[') { P->inlink = 1; P->linkpart = 0; }
+  else if (c == ']' && prev == ']') P->inlink = 0;
+  else if (P->inlink && c == '|') P->linkpart = 1;
+  if (c == '{' && prev == '{') { if (P->tdepth < 3) P->tdepth++; P->tpart = 0; }
+  else if (c == '}' && prev == '}') { if (P->tdepth) P->tdepth--; P->tpart = 1; }
+  else if (P->tdepth && !P->inlink && c == '|') P->tpart = 1;
+  else if (P->tdepth && !P->inlink && c == '=' && P->tpart == 1) P->tpart = 2;
+  if (c == '<') P->intag = 1;
+  else if (c == '>') P->intag = 0;
+  if ((c == '|' || c == '!') && (P->linefirst == '|' || P->linefirst == '!') && !P->inlink && !P->tdepth && P->col < 15) P->col++;
+  if (c >= '0' && c <= '9') {
+    if (!P->numlen) P->numctx = (P->c4 >> 8) & 0xffff;
+    if (P->numlen < 15) P->numlen++;
+    P->numhash = hash2(P->numhash, (U32)c);
+  } else { P->numlen = 0; P->numhash = 0; }
+  int lf = P->linefirst;
+  P->kind = P->intag ? 5 : P->inlink ? 1 + P->linkpart : P->tdepth ? 3 + (P->tpart != 0)
+          : (lf == '|' || lf == '!') ? 6 : (lf == '=' || lf == '*' || lf == '#' || lf == ':') ? 7 : 0;
+#endif
 
   P->ctxhash[0] = hash2(1, P->c4 & 0xff);
   P->ctxhash[1] = hash2(2, P->c4 & 0xffff);
@@ -387,6 +444,30 @@ static void byte_update(Predictor *P, int c) {
   P->ctxhash[5] = hash2(hash2(6, P->c4), P->c8);
   P->ctxhash[6] = hash2(hash2(7, P->word), P->c4 & 0xff);
   P->ctxhash[7] = hash2(hash2(8, P->word), P->prevword);
+#if WIKICTX
+  int j = 8;
+  U32 kd = (U32)P->kind; (void)kd;
+#if WBIT(0)
+  P->ctxhash[j++] = hash2(hash2(hash2(9, P->word), kd), P->c4 & 0xff);
+#endif
+#if WBIT(1)
+  P->ctxhash[j++] = hash2(hash2(10, P->c4 & 0xffff), kd);
+#endif
+#if WBIT(2)
+  P->ctxhash[j++] = hash2(hash2(11, (U32)P->col | (U32)P->linefirst << 4 | kd << 12), P->c4 & 0xff);
+#endif
+#if WBIT(3)
+  P->ctxhash[j++] = P->numlen ? hash2(hash2(12, P->numhash), P->numctx | (U32)P->numlen << 16)
+                              : hash2(12, 0x1000000 | (P->c4 & 0xffff));
+#endif
+#if WBIT(4)
+  P->ctxhash[j++] = hash2(13, (P->c4 >> 8) & 0xffff);
+#endif
+#if WBIT(5)
+  P->ctxhash[j++] = hash2(hash2(14, P->word), P->pprevword);
+#endif
+  (void)j;
+#endif
 
   /* match model: extend the current match or look up a new one */
   if (P->mlen > 0 && P->buf[P->mptr % P->cap] == (U8)c) {
@@ -453,7 +534,12 @@ static int predict(Predictor *P) {
   }
   m->x[N_INPUTS - 1] = 256;
 
+#if MIXSEL_PARSE
+  int k4 = P->kind == 0 ? 0 : P->kind <= 2 ? 1 : P->kind <= 4 ? 2 : 3;
+  P->pr_mix = mixer_p(m, (int)P->c0 + 256 * (lenb + 4 * k4));
+#else
   P->pr_mix = mixer_p(m, (int)P->c0 + 256 * lenb);
+#endif
   int p1 = apm_p(&P->a1, P->pr_mix, (int)P->c0);
   int p2 = apm_p(&P->a2, P->pr_mix, (int)(P->c0 | ((P->c4 & 0xff) << 8)));
   int pr = (P->pr_mix * 2 + p1 + p2 + 2) >> 2;
