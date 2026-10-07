@@ -21,6 +21,7 @@
  *
  * This Code is licensed under UNLICENSE http://unlicense.org
  */
+#define _POSIX_C_SOURCE 200809L /* getc_unlocked: plain getc locks per byte */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -327,7 +328,7 @@ static void encode_bit(Coder *c, int p, int y) {
   if (y) c->x2 = xmid;
   else c->x1 = xmid + 1;
   while (((c->x1 ^ c->x2) & 0xff000000) == 0) {
-    putc(c->x2 >> 24, c->f);
+    putc_unlocked(c->x2 >> 24, c->f);
     c->x1 <<= 8;
     c->x2 = (c->x2 << 8) | 255;
   }
@@ -341,7 +342,7 @@ static int decode_bit(Coder *c, int p) {
   while (((c->x1 ^ c->x2) & 0xff000000) == 0) {
     c->x1 <<= 8;
     c->x2 = (c->x2 << 8) | 255;
-    int b = getc(c->f);
+    int b = getc_unlocked(c->f);
     c->x = (c->x << 8) | (U32)(b == EOF ? 0 : b);
   }
   return y;
@@ -360,14 +361,14 @@ static int compress(const char *in, const char *out) {
   fseek(fi, 0, SEEK_END);
   U64 n = (U64)ftell(fi);
   fseek(fi, 0, SEEK_SET);
-  for (int i = 7; i >= 0; --i) putc((int)(n >> (i * 8)) & 255, fo);
+  for (int i = 7; i >= 0; --i) putc_unlocked((int)(n >> (i * 8)) & 255, fo);
 
   static Predictor P;
   predictor_init(&P, n);
   select_slots(&P);
   Coder c = {0, 0xffffffff, 0, fo};
   for (U64 i = 0; i < n; ++i) {
-    int ch = getc(fi);
+    int ch = getc_unlocked(fi);
     for (int b = 7; b >= 0; --b) {
       int y = (ch >> b) & 1;
       encode_bit(&c, predict(&P), y);
@@ -375,7 +376,7 @@ static int compress(const char *in, const char *out) {
     }
     progress(i + 1, n);
   }
-  for (int i = 0; i < 4; ++i) { putc(c.x1 >> 24, fo); c.x1 <<= 8; }
+  for (int i = 0; i < 4; ++i) { putc_unlocked(c.x1 >> 24, fo); c.x1 <<= 8; }
   fprintf(stderr, "\r%llu -> %ld bytes\n", (unsigned long long)n, ftell(fo));
   fclose(fi);
   fclose(fo);
@@ -392,7 +393,7 @@ static int decompress(const char *in, const char *out) {
   predictor_init(&P, n);
   select_slots(&P);
   Coder c = {0, 0xffffffff, 0, fi};
-  for (int i = 0; i < 4; ++i) { int b = getc(fi); c.x = (c.x << 8) | (U32)(b == EOF ? 0 : b); }
+  for (int i = 0; i < 4; ++i) { int b = getc_unlocked(fi); c.x = (c.x << 8) | (U32)(b == EOF ? 0 : b); }
   for (U64 i = 0; i < n; ++i) {
     int ch = 0;
     for (int b = 0; b < 8; ++b) {
@@ -400,7 +401,7 @@ static int decompress(const char *in, const char *out) {
       update(&P, y);
       ch = (ch << 1) | y;
     }
-    putc(ch, fo);
+    putc_unlocked(ch, fo);
     progress(i + 1, n);
   }
   fprintf(stderr, "\rdecompressed %llu bytes\n", (unsigned long long)n);

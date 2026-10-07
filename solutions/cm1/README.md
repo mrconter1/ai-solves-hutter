@@ -28,6 +28,21 @@ byte. There is no collision detection.
 Memory: 8 x 256 MB tables, plus the input buffer for the match model (1 GB on
 enwik9), plus 64 MB of match pointers. That's about 3.2 GB on enwik9.
 
+## Results
+
+| Input | Archive bytes | bpc (archive only) | Notes |
+|---|---|---|---|
+| enwik7 | 2,449,272 | 1.959 | |
+| enwik8 | 22,075,602 | 1.766 | |
+| enwik9 | 180,556,196 | 1.444 | Round-trip verified. 180,574,764 total with the 18.5 KB dynamic binary it ran with |
+
+## Build notes
+
+- The binary is static, so it runs in the sandbox with no libraries. With
+  `musl-gcc` it is 50.6 KB; with glibc static it is 747 KB.
+- The I/O uses `getc_unlocked`/`putc_unlocked`. Plain `getc` locks once per
+  byte, which made the musl build noticeably slower. The output is unchanged.
+
 ## Tuning notes
 
 - Mixer learning rate: swept on enwik7. Going from `err*12 >> 14` (the first
