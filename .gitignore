@@ -1,4 +1,4 @@
 data/
 work/
 *.o
-solutions/*/bin/
+attempts/*/bin/

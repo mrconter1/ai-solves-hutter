@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Builds a solution, compresses an input, decompresses it, verifies the result
+# Builds an attempt, compresses an input, decompresses it, verifies the result
 # byte for byte and appends one row to results/results.csv.
 #
-#   bench/run.sh <solution> [input=enwik7]
+#   bench/run.sh <attempt> [input=enwik7]
 #   NOTE="..." bench/run.sh ...    adds a free-text note to the CSV row
 #
 # Each direction runs in its own sandbox. The limits come from bench/limits.sh:
@@ -22,7 +22,7 @@ cd "$(dirname "$0")/.."
 root=$(pwd)
 . bench/limits.sh
 
-sol=${1:?usage: bench/run.sh <solution> [input]}
+sol=${1:?usage: bench/run.sh <attempt> [input]}
 input=${2:-enwik7}
 record=100424672          # current enwik9 record (Ivanov, 24 Jul 2026)
 core=${CORE:-2}
@@ -34,8 +34,8 @@ disk_limit=$((DISK_LIMIT_GB * 1000 * 1000 * 1000))
 src="$root/data/$input"
 [ -f "$src" ] || { echo "missing $src, run bench/fetch.sh" >&2; exit 1; }
 
-bash "solutions/$sol/build.sh"
-bin="$root/solutions/$sol/bin/$sol"
+bash "attempts/$sol/build.sh"
+bin="$root/attempts/$sol/bin/$sol"
 if ldd "$bin" >/dev/null 2>&1; then
   echo "$bin is dynamically linked; the contest needs a self-contained binary" >&2
   exit 1
@@ -121,7 +121,7 @@ d_s=$(seconds "$(stat_field "$work/d.time" 'Elapsed (wall clock)')")
 c_mb=$(( $(stat_field "$work/c.time" 'Maximum resident') / 1024 ))
 d_mb=$(( $(stat_field "$work/d.time" 'Maximum resident') / 1024 ))
 disk_mb=$(( $(sort -n "$work/c.disk" "$work/d.disk" | tail -1) / 1000000 ))
-commit=$(git rev-parse --short HEAD)$([ -z "$(git status --porcelain -- "solutions/$sol")" ] || echo "-dirty")
+commit=$(git rev-parse --short HEAD)$([ -z "$(git status --porcelain -- "attempts/$sol")" ] || echo "-dirty")
 cpu=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ *//; s/,/ /g')
 
 # How much bigger than the record; only meaningful on the contest file.
@@ -132,10 +132,10 @@ else
 fi
 
 csv=results/results.csv
-[ -f "$csv" ] || echo "date_utc,commit,solution,input,input_bytes,archive_bytes,binary_bytes,total_bytes,bpc,vs_record,compress_s,decompress_s,compress_peak_mb,decompress_peak_mb,peak_disk_mb,verified,cpu,note" > "$csv"
+[ -f "$csv" ] || echo "date_utc,commit,attempt,input,input_bytes,archive_bytes,binary_bytes,total_bytes,bpc,vs_record,compress_s,decompress_s,compress_peak_mb,decompress_peak_mb,peak_disk_mb,verified,cpu,note" > "$csv"
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ),$commit,$sol,$input,$in_bytes,$arc_bytes,$bin_bytes,$total,$bpc,$vs,$c_s,$d_s,$c_mb,$d_mb,$disk_mb,$verified,$cpu,${NOTE//,/;}" >> "$csv"
 
-printf '\n%-14s %s' solution "$sol" input "$input ($in_bytes bytes)" archive "$arc_bytes" binary "$bin_bytes" \
+printf '\n%-14s %s' attempt "$sol" input "$input ($in_bytes bytes)" archive "$arc_bytes" binary "$bin_bytes" \
   total "$total" bpc "$bpc" "vs record" "$vs" compress "${c_s}s, ${c_mb} MB peak" \
   decompress "${d_s}s, ${d_mb} MB peak" disk "${disk_mb} MB peak" verified "$verified"
 echo

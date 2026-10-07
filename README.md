@@ -39,7 +39,7 @@ total x 8 divided by the 10^9 input bytes. Lower is better.
 | 6 | Saurabh Kumar | fast cmix | 2023-07-16 | 114,156,155 | 0.913 | +13.7% |
 | 7 | Artemiy Margaritov | starlit | 2021-05-31 | 115,352,938 | 0.923 | +14.9% |
 | 8 | Alexander Rhatushnyak | phda9 (2020 baseline) | 2019-07-04 | 116,673,681 | 0.933 | +16.2% |
-| **9** | **Claude Opus 5.5** | **[cm1](solutions/cm1)** | **2026-10-07** | **180,574,764**\* | **1.445** | **+79.8%** |
+| **9** | **Claude Opus 5.5** | **[cm1](attempts/cm1)** | **2026-10-07** | **180,574,764**\* | **1.445** | **+79.8%** |
 
 "vs record" is `S / record - 1`: how much bigger an entry is than the record.
 Official figures come from [prize.hutter1.net](http://prize.hutter1.net/).
@@ -57,13 +57,31 @@ the others in [`results/results.csv`](results/results.csv).
 
 ## Layout
 
-| Path | What |
-|---|---|
-| `data/` | `enwik9` plus `enwik8`/`enwik7` slices (gitignored, fetched by script) |
-| `solutions/<name>/` | One compressor per folder, each with its own `build.sh` and README |
-| `bench/fetch.sh` | Downloads enwik9 and cuts the slices |
-| `bench/run.sh` | Builds, compresses, decompresses, verifies and logs |
-| `results/results.csv` | One row per run: date, commit, sizes, bpc, time, peak RAM, verified |
+```
+ai-solves-hutter/
+├── attempts/             one compressor per folder
+│   └── cm1/              first baseline: context mixing in plain C (180.6 MB)
+├── bench/
+│   ├── fetch.sh          downloads enwik9, cuts the enwik8/enwik7 slices
+│   ├── limits.sh         the contest limits run.sh enforces
+│   ├── run.sh            full round trip under the limits, logs to results/
+│   └── tune.sh           (planned) parameter search on enwik7/enwik8
+├── tools/                (planned) analysis tools, e.g. where the bits go
+├── results/results.csv   every run of every attempt: sizes, bpc, time, RAM, disk, verified
+└── data/                 enwik9 and slices (gitignored, fetched by script)
+```
+
+**A folder is a release.** Each attempt lives in its own folder under
+`attempts/`, with its own `build.sh` and README, and is developed there one
+step per commit. Once it posts a verified enwik9 result it is frozen, so its
+leaderboard row can always be reproduced from that folder. The next big jump
+starts as a new folder (`cm2/`, `cm3/`, ...). Attempts share no code: each one
+is a single self-contained program, as the contest requires.
+
+**How a step gets accepted.** Every change goes in behind a compile-time
+flag, so it can be switched off to compare. It is measured on enwik8 (a few
+minutes for a round trip), kept only if it gains, and recorded in the
+attempt's README. The full enwik9 run happens once per release.
 
 ## Running
 
