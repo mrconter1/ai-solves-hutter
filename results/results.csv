@@ -3,3 +3,4 @@ date_utc,commit,solution,input,input_bytes,archive_bytes,binary_bytes,total_byte
 2026-10-07T08:56:00Z,cfb0047,cm1,enwik7,10000000,2449272,18568,2467840,1.9743,n/a,25.33,20.15,1741,1741,,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics,pre-sandbox harness; dynamic glibc binary
 2026-10-07T09:03:11Z,cfb0047,cm1,enwik8,100000000,22075602,18568,22094170,1.7675,n/a,237.12,178.97,1894,1894,,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics,pre-sandbox harness; dynamic glibc binary
 2026-10-07T11:15:15Z,cfb0047,cm1,enwik9,1000000000,180556196,18568,180574764,1.4446,+79.8%,5269,2454.8,2783,2783,,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics,pre-sandbox harness; dynamic glibc binary; compress time inflated by host RAM paging the WSL VM
+2026-10-07T14:42:52Z,060d8c9,cm1,enwik7,10000000,2449272,50584,2499856,1.9999,n/a,46.62,37.88,1739,1739,12,yes,AMD Ryzen 5 PRO 7540U w/ Radeon 740M Graphics,first run under the sandboxed harness
