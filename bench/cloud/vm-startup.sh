@@ -36,6 +36,9 @@ mkdir -p data
 cached=yes
 gcloud storage cp "gs://$BUCKET/data/enwik9.zip" data/enwik9.zip >/dev/null 2>&1 || cached=no
 
+if [ "$(md attributes/batch || true)" = yes ] && gcloud storage cp "$RUN/variants.txt" /work/variants.txt >/dev/null 2>&1; then
+  export BATCH_VARIANTS=/work/variants.txt
+fi
 bash bench/remote-run.sh "$ATTEMPT" "$INPUT" /work/out
 [ "$cached" = no ] && [ -f data/enwik9.zip ] && gcloud storage cp data/enwik9.zip "gs://$BUCKET/data/enwik9.zip" >/dev/null 2>&1
 upload

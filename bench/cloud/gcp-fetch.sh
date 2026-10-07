@@ -26,6 +26,12 @@ status=$(cat_ "gs://$bucket/runs/$id/STATUS" || echo '(starting)')
 echo "status: $status"
 cat_ "gs://$bucket/runs/$id/run.log" | tail -n 15 || true
 
+tsv=$(cat_ "gs://$bucket/runs/$id/results.tsv" || true)
+if [ -n "$tsv" ]; then
+  echo "== batch results (sorted by size)"
+  echo "$tsv" | column -t -s "$(printf '	')" 2>/dev/null || echo "$tsv"
+  exit 0
+fi
 row=$(cat_ "gs://$bucket/runs/$id/result.csv" || true)
 if [ -n "$row" ]; then
   if grep -qxF "$row" results/results.csv; then

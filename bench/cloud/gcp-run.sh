@@ -54,6 +54,11 @@ fi
 tmp=$(mktemp -d)
 git archive --format=tar.gz -o "$tmp/repo.tar.gz" HEAD
 "$gcloud" storage cp "$tmp/repo.tar.gz" "gs://$bucket/runs/$run_id/repo.tar.gz" --project "$project" >/dev/null
+batch=no
+if [ -n "${BATCH_VARIANTS:-}" ]; then
+  "$gcloud" storage cp "$BATCH_VARIANTS" "gs://$bucket/runs/$run_id/variants.txt" --project "$project" >/dev/null
+  batch=yes
+fi
 rm -rf "$tmp"
 
 "$gcloud" compute instances create "$vm" \
@@ -62,7 +67,7 @@ rm -rf "$tmp"
   --boot-disk-size 50GB --boot-disk-type pd-balanced \
   --scopes cloud-platform \
   --max-run-duration "${max_hours}h" --instance-termination-action DELETE \
-  --metadata "bucket=$bucket,run-id=$run_id,attempt=$attempt,input=$input,commit=$commit,note=$note,cflags=$cflags" \
+  --metadata "bucket=$bucket,run-id=$run_id,attempt=$attempt,input=$input,commit=$commit,note=$note,batch=$batch,cflags=$cflags" \
   --metadata-from-file startup-script=bench/cloud/vm-startup.sh \
   --format "value(name)"
 

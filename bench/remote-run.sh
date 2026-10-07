@@ -15,6 +15,7 @@
 # sandbox in run.sh uses `unshare --root`, which Ubuntu 24.04 restricts.
 # Pass COMMIT=<hash> when the tree has no .git (an exported archive).
 # CFLAGS (extra build flags) and NOTE pass through to bench/run.sh.
+# With BATCH_VARIANTS=<file> it runs bench/batch-run.sh instead (experiments).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 attempt=${1:?usage: remote-run.sh <attempt> [input] [outdir]}
@@ -42,6 +43,12 @@ fi
 bash bench/fetch.sh || { status "FAILED: data fetch"; exit 1; }
 
 rc=0
+if [ -n "${BATCH_VARIANTS:-}" ]; then
+  # Experiment batch: many build variants, results table instead of a CSV row.
+  bash bench/batch-run.sh "$attempt" "$input" "$BATCH_VARIANTS" "$out" || rc=$?
+  if [ "$rc" -eq 0 ]; then status OK; else status "FAILED: batch-run.sh exit $rc"; fi
+  exit "$rc"
+fi
 bash bench/run.sh "$attempt" "$input" || rc=$?
 tail -n 1 results/results.csv > "$out/result.csv"
 cp work/"$attempt"/*.time "$out/" 2>/dev/null || true
