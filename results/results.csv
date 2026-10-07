@@ -11,3 +11,4 @@ date_utc,commit,attempt,model,input,input_bytes,archive_bytes,binary_bytes,total
 2026-10-07T18:06:30Z,6695964,cm2,Claude Opus 5.5,enwik8,100000000,19452828,50576,19503404,1.5603,n/a,137.17,138.71,1763,1763,119,yes,AMD EPYC 7B13,cm2 step 2: buckets (dev size)
 2026-10-07T18:07:16Z,6695964,cm2,Claude Opus 5.5,enwik8,100000000,19406054,50576,19456630,1.5565,n/a,148.08,149.37,6312,6312,119,yes,AMD EPYC 7B13,cm2 step 2: buckets (release size); cflags=-DTABLE_BITS=26
 2026-10-07T18:32:53Z,99cd13a,cm2,Claude Opus 5.5,enwik8,100000000,19008680,50576,19059256,1.5247,n/a,254.92,255.37,2397,2402,119,yes,AMD EPYC 7B13,cm2 step 3: wiki contexts (dev size)
+2026-10-07T18:50:25Z,fe78203,cm2,Claude Opus 5.5,enwik8,100000000,19056553,50576,19107129,1.5286,n/a,215.15,212.03,2147,2147,119,yes,AMD EPYC 7B13,cm2 step 3: wiki contexts WIKICTX=37 (dev size)

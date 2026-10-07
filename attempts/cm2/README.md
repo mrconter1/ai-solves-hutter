@@ -20,6 +20,9 @@ Build flags:
 | `-DSM_LIMIT=n` | StateMap adaptation limit (default 1023) |
 | `-DUSE_BUCKETS=0` | Step 2 off: one block per hash, replaced on any mismatch, exactly as step 1 (default 1) |
 | `-DTABLE_BITS=n` | 2^n blocks of 16 bytes per context model. 24 = 256 MB per model, about 1.7 GB in total (default, dev). 26 = 1 GB per model, about 7.2 GB in total on enwik9 (release) |
+| `-DWIKICTX=mask` | Step 3 models: 1 word + parse state, 2 order-2 + parse state, 4 line/table column, 8 number, 16 sparse (bytes 2-3 back), 32 word + word before previous. Default 37 (1+4+32); 0 = step 2 exactly |
+| `-DMIXSEL_PARSE=0` | Step 3 off for the mixer: weight set chosen without the parse state (default 1) |
+| `-DEXTRA_TABLE_BITS=n` | Table size cap for the step 3 models (default 23, 128 MB each) |
 
 ## Ablation
 
@@ -31,11 +34,71 @@ Every step, measured on enwik8 (10^8 bytes). Archive bytes exclude the binary.
 | 1 | Bit-history states + StateMaps, run inputs, block checks | 19,706,832 | 1.577 | **-10.7%** | 144 s / 142 s (cloud n2d) | 1.9 GB |
 | 2 | 4-way bucketed tables, least-history replacement (dev size) | 19,452,828 | 1.556 | **-1.3%** | 137 s / 139 s (cloud n2d) | 1.8 GB |
 | 2 | Same, release size (`TABLE_BITS=26`) | 19,406,054 | 1.552 | -1.5% | 148 s / 149 s (cloud n2d) | 6.3 GB |
+| 3 | Wiki parse state: 3 structure models + parse-based mixer selection (`WIKICTX=37`, dev size) | 19,056,553 | 1.525 | **-2.0%** | 215 s / 212 s (cloud n2d) | 2.1 GB |
+| 3 | Variant: all 5 structure models (`WIKICTX=55`), not kept | 19,008,680 | 1.521 | -2.3% | 255 s / 255 s (cloud n2d) | 2.4 GB |
 
 Times come from different machines until a cloud baseline exists: the cloud
 n2d core is about twice as fast as the laptop. On the same machine, step 1
 costs about 15% more time (enwik7: 32 s to 37 s compressing on the laptop).
 The bpc column is archive only; the leaderboard adds the binary.
+
+## Step 3: wiki structure contexts
+
+Step 0 showed that about 92% of the cost is natural language, in article text,
+links and templates alike, while XML is already cheap. So step 3 tracks where
+in the wiki markup the coder is, and lets a few models and the mixer use it.
+
+A **parse state** is updated after every byte, from bytes already coded, so
+the decoder follows exactly the same state:
+
+- inside a `[[link]]`, and whether in the target or the display text after `|`
+- inside a `{{template}}` (depth capped at 3), and whether in the name, a
+  parameter or a value after `=`
+- inside an XML tag
+- the first byte of the line (table row, heading, list) and the table column
+- digit runs, for a number model
+
+From that, a coarse **kind** (text, link target, link text, template name,
+template parameter, tag, table line, heading or list line) feeds the new models,
+and four coarse groups of it (text, link, template, other) are added to the
+mixer's weight-set selector.
+
+Each candidate on enwik7, against step 2 (2,113,216 bytes, 16.6 s user time
+on the laptop, one core):
+
+| Variant | enwik7 bytes | vs step 2 | Time |
+|---|---|---|---|
+| Mixer selection by parse state only | 2,096,387 | -0.80% | +8% |
+| + word and parse state (1) | 2,093,624 | -0.93% | |
+| + order-2 and parse state (2) | 2,094,274 | -0.90% | |
+| + line type and table column (4) | 2,093,440 | -0.94% | |
+| + number (8) | 2,113,460 | +0.01% | |
+| + sparse, bytes 2-3 back (16) | 2,109,805 | -0.16% | |
+| + word and the word before the previous one (32) | 2,106,287 | -0.33% | |
+| 1+4, with mixer selection | 2,075,599 | -1.78% | +15% |
+| **1+4+32, with mixer selection (shipped)** | **2,070,142** | **-2.04%** | **+20%** |
+| 1+2+4, with mixer selection | 2,072,593 | -1.92% | +51% |
+| 1+2+4+32, with mixer selection | 2,067,156 | -2.18% | +62% |
+| 1+2+4+16+32, with mixer selection | 2,065,191 | -2.27% | +103% |
+| all six, with mixer selection | 2,066,968 | -2.19% | |
+
+(The single-model rows were measured without mixer selection, and their times
+were not taken on a quiet machine, so they are left blank.)
+
+What did not help: the **number model** gained nothing, even though numbers cost
+3.8 bpc in step 0; they are mostly years, dates and IDs that the order-n and
+match models already handle as well as this context can. The **sparse model**
+and the **order-2 + parse state** model each gained a little but cost a lot of
+time, so they are left out of the default.
+
+On enwik8 the shipped set saves 2.0% (19,452,828 to 19,056,553). Its time
+cost on the cloud n2d core is larger than on the laptop: 215 s against 137 s
+per direction, +57%. That is still far inside the budget (cm2 on enwik9
+should take well under an hour per direction, against the 50 h limit), so
+compression wins here. `WIKICTX=5` is the cheaper fallback (-1.8% on enwik7).
+
+The three new models use tables capped at 128 MB each (`EXTRA_TABLE_BITS=23`),
+so the release configuration grows by about 0.4 GB, to roughly 7.6 GB on enwik9.
 
 ## Step 2: bucketed hash tables
 
