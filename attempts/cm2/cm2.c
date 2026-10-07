@@ -6,8 +6,15 @@
  *   cm2 d <archive> <output>    decompress
  *
  * Build with -DCOST_LOG to also write <archive>.cost during compression: one
- * float32 per input byte, the bits spent coding it (sum of -log2 p over its 8
- * bits). The archive itself is unchanged. tools/bitcost reads this file.
+ * float32 per coded byte, the bits spent coding it (sum of -log2 p over its 8
+ * bits). The archive itself is unchanged. tools/bitcost reads this file; it
+ * lines up with the input only with -DUSE_PREPROC=0, because the step 4
+ * transform changes the byte stream that gets coded.
+ *
+ * Step 4 (preproc.c): before modelling, the input goes through a reversible
+ * transform (capital flags, entity bytes, a word dictionary built from the
+ * input). The model codes the transformed stream; the decompressor decodes it
+ * and runs the inverse.
  *
  * How it works (the PAQ recipe, cut down to the essentials):
  *   1. The file is coded one bit at a time with a binary arithmetic coder.
@@ -38,6 +45,14 @@ typedef uint8_t U8;
 typedef uint16_t U16;
 typedef uint32_t U32;
 typedef uint64_t U64;
+
+/* Step 4: reversible text transform in front of the model (preproc.c). */
+#ifndef USE_PREPROC
+#define USE_PREPROC 1
+#endif
+#if USE_PREPROC
+#include "preproc.c"
+#endif
 
 /* Step 1: bit-history states instead of plain probability counters (on by default). */
 #ifndef USE_BITHIST
@@ -307,6 +322,7 @@ typedef struct {
   int bitpos;
   U32 c4, c8;          /* last 8 bytes */
   U32 word, prevword, pprevword;
+  U8 afterprefix;      /* step 4: the next byte is the 2nd byte of a word code */
 
   /* step 3 parse state, updated per byte */
   U8 atline, linefirst, col;     /* line start, first byte of the line, table column */
@@ -328,7 +344,7 @@ typedef struct {
   int pr_mix, pr;
 } Predictor;
 
-static void predictor_init(Predictor *P, U64 cap) {
+static void predictor_init(Predictor *P, U64 cap, U8 *extbuf) {
   memset(P, 0, sizeof *P);
   for (int i = 0; i < N_CTX; ++i) {
 #if USE_BITHIST && USE_BUCKETS
@@ -347,7 +363,9 @@ static void predictor_init(Predictor *P, U64 cap) {
   }
   for (int i = 0; i < 64 * 2; ++i) P->msm[i] = 1u << 31;
   P->cap = cap ? cap : 1;
-  P->buf = xcalloc(P->cap, 1);
+  /* the compressor can hand over the buffer it already holds: the model only
+     ever writes into it the same bytes that are already there */
+  P->buf = extbuf ? extbuf : xcalloc(P->cap, 1);
   P->mtab = xcalloc((size_t)1 << MATCH_HASH_BITS, sizeof(U32));
   P->c0 = 1;
   P->atline = 1;
@@ -401,7 +419,22 @@ static void byte_update(Predictor *P, int c) {
   P->c8 = (P->c8 << 8) | (P->c4 >> 24);
   P->c4 = (P->c4 << 8) | (U32)c;
 
-  /* words: letters only, case folded */
+  /* words: letters only, case folded. With the step 4 transform, a word code
+     is a whole word and capital flags are invisible to the word model. */
+#if USE_PREPROC
+  int role = pp_role[c];
+  if (P->afterprefix) {
+    P->word = hash2(P->word, (U32)c | 0x200);
+    P->afterprefix = 0;
+  } else if (role == R_CAP || role == R_ALLCAP) {
+    /* neither extends nor ends a word */
+  } else if (role == R_CODE1) {
+    P->word = hash2(P->word, (U32)c | 0x100);
+  } else if (role == R_PREFIX) {
+    P->word = hash2(P->word, (U32)c | 0x100);
+    P->afterprefix = 1;
+  } else
+#endif
   if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
     P->word = hash2(P->word, (U32)(c | 32));
   } else if (P->word) {
@@ -631,6 +664,102 @@ static void progress(U64 done, U64 total) {
     fprintf(stderr, "\r%3d%%", (int)(done * 100 / total)), fflush(stderr);
 }
 
+#if USE_PREPROC
+/* Archive: 8 bytes input length, 8 bytes length of T, the transform header,
+   then the arithmetic-coded T. */
+static int compress(const char *in, const char *out) {
+  FILE *fi = fopen(in, "rb"), *fo = fopen(out, "wb");
+  if (!fi || !fo) { perror("open"); return 1; }
+  fseek(fi, 0, SEEK_END);
+  U64 n = (U64)ftell(fi);
+  fseek(fi, 0, SEEK_SET);
+  U8 *a = xcalloc(n ? n : 1, 1);
+  if (fread(a, 1, n, fi) != n) { perror("read"); return 1; }
+  fclose(fi);
+
+  PPHeader h;
+  U64 m = n;
+  U8 *t = pp_forward(a, n, &m, &h);
+  if (t) free(a); /* keep only T; the model reuses it as its history buffer */
+  else t = a;
+  fprintf(stderr, "transform: %llu -> %llu bytes, %u dictionary words\n",
+          (unsigned long long)n, (unsigned long long)m, h.ndict);
+
+  for (int i = 7; i >= 0; --i) putc_unlocked((int)(n >> (i * 8)) & 255, fo);
+  for (int i = 7; i >= 0; --i) putc_unlocked((int)(m >> (i * 8)) & 255, fo);
+  pp_header_write(&h, fo);
+
+  static Predictor P;
+  predictor_init(&P, m, t);
+  select_slots(&P);
+  Coder c = {0, 0xffffffff, 0, fo};
+#ifdef COST_LOG
+  /* with the transform on, costs are per byte of T, not per input byte */
+  init_cost();
+  char cost_name[4096];
+  snprintf(cost_name, sizeof cost_name, "%s.cost", out);
+  FILE *fc = fopen(cost_name, "wb");
+  if (!fc) { perror("open cost log"); return 1; }
+#endif
+  for (U64 i = 0; i < m; ++i) {
+    int ch = t[i];
+#ifdef COST_LOG
+    float bits = 0;
+#endif
+    for (int b = 7; b >= 0; --b) {
+      int y = (ch >> b) & 1;
+      int p = predict(&P);
+#ifdef COST_LOG
+      bits += cost_t[y ? p : 4096 - p];
+#endif
+      encode_bit(&c, p, y);
+      update(&P, y);
+    }
+#ifdef COST_LOG
+    fwrite(&bits, sizeof bits, 1, fc);
+#endif
+    progress(i + 1, m);
+  }
+#ifdef COST_LOG
+  fclose(fc);
+#endif
+  for (int i = 0; i < 4; ++i) { putc_unlocked(c.x1 >> 24, fo); c.x1 <<= 8; }
+  fprintf(stderr, "\r%llu -> %ld bytes\n", (unsigned long long)n, ftell(fo));
+  fclose(fo);
+  return 0;
+}
+
+static int file_sink(void *ctx, const U8 *s, size_t n) {
+  return fwrite(s, 1, n, (FILE *)ctx) != n;
+}
+
+static int decompress(const char *in, const char *out) {
+  FILE *fi = fopen(in, "rb"), *fo = fopen(out, "wb");
+  if (!fi || !fo) { perror("open"); return 1; }
+  U64 n = 0, m = 0;
+  for (int i = 0; i < 8; ++i) n = (n << 8) | (U64)getc_unlocked(fi);
+  for (int i = 0; i < 8; ++i) m = (m << 8) | (U64)getc_unlocked(fi);
+  PPHeader h;
+  if (pp_header_read(&h, fi)) { fprintf(stderr, "bad transform header\n"); return 1; }
+
+  static Predictor P;
+  predictor_init(&P, m, NULL);
+  select_slots(&P);
+  Coder c = {0, 0xffffffff, 0, fi};
+  for (int i = 0; i < 4; ++i) { int b = getc_unlocked(fi); c.x = (c.x << 8) | (U32)(b == EOF ? 0 : b); }
+  for (U64 i = 0; i < m; ++i) {
+    for (int b = 0; b < 8; ++b) update(&P, decode_bit(&c, predict(&P)));
+    progress(i + 1, m);
+  }
+  /* the model's history buffer now holds all of T */
+  if (pp_inverse(P.buf, m, &h, file_sink, fo)) { fprintf(stderr, "inverse transform failed\n"); return 1; }
+  fclose(fi);
+  if (ftell(fo) != (long)n) { fprintf(stderr, "length mismatch\n"); return 1; }
+  fclose(fo);
+  fprintf(stderr, "\rdecompressed %llu bytes\n", (unsigned long long)n);
+  return 0;
+}
+#else
 static int compress(const char *in, const char *out) {
   FILE *fi = fopen(in, "rb"), *fo = fopen(out, "wb");
   if (!fi || !fo) { perror("open"); return 1; }
@@ -640,7 +769,7 @@ static int compress(const char *in, const char *out) {
   for (int i = 7; i >= 0; --i) putc_unlocked((int)(n >> (i * 8)) & 255, fo);
 
   static Predictor P;
-  predictor_init(&P, n);
+  predictor_init(&P, n, NULL);
   select_slots(&P);
   Coder c = {0, 0xffffffff, 0, fo};
 #ifdef COST_LOG
@@ -686,7 +815,7 @@ static int decompress(const char *in, const char *out) {
   for (int i = 0; i < 8; ++i) n = (n << 8) | (U64)getc(fi);
 
   static Predictor P;
-  predictor_init(&P, n);
+  predictor_init(&P, n, NULL);
   select_slots(&P);
   Coder c = {0, 0xffffffff, 0, fi};
   for (int i = 0; i < 4; ++i) { int b = getc_unlocked(fi); c.x = (c.x << 8) | (U32)(b == EOF ? 0 : b); }
@@ -705,6 +834,8 @@ static int decompress(const char *in, const char *out) {
   fclose(fo);
   return 0;
 }
+
+#endif
 
 int main(int argc, char **argv) {
   if (argc != 4 || (argv[1][0] != 'c' && argv[1][0] != 'd')) {
