@@ -37,11 +37,28 @@ typedef uint16_t U16;
 typedef uint32_t U32;
 typedef uint64_t U64;
 
+/* Step 1: bit-history states instead of plain probability counters (on by default). */
+#ifndef USE_BITHIST
+#define USE_BITHIST 1
+#endif
+
+#if USE_BITHIST
+#define TABLE_BITS 24       /* 2^24 blocks x 16 bytes = 256 MB per context model */
+#ifndef RUN_INPUT
+#define RUN_INPUT 1         /* also feed a run input per model */
+#endif
+#define INPUTS_PER_CTX (1 + RUN_INPUT)
+#ifndef SM_LIMIT
+#define SM_LIMIT 1023       /* StateMap adaptation limit */
+#endif
+#else
 #define TABLE_BITS 22       /* 2^22 blocks x 64 bytes = 256 MB per context model */
+#define INPUTS_PER_CTX 1
+#endif
 #define MATCH_HASH_BITS 24  /* 64 MB of match pointers */
 #define MATCH_MIN 7         /* bytes of context hashed to find a match */
 #define N_CTX 8             /* hashed context models */
-#define N_INPUTS (N_CTX + 2) /* + match model + bias */
+#define N_INPUTS (N_CTX * INPUTS_PER_CTX + 2) /* + match model + bias */
 #ifndef MIXER_LR
 #define MIXER_LR 4          /* mixer learning rate; swept 1..6 on enwik7, 4 was best */
 #endif
@@ -99,6 +116,70 @@ static inline void counter_update(U32 *t, int y, int limit) {
   *t = v;
 }
 
+#if USE_BITHIST
+/* ---------- bit-history states (step 1) ----------
+ * A context slot holds one byte: a state standing for (n0, n1, last bit), the
+ * recent counts of zeros and ones seen in that context. On each new bit the
+ * matching count goes up and a large opposite count is cut to about half, so
+ * the state favours recent behaviour. Counts are bounded so that every state
+ * fits in a byte: the smaller count may be up to 6 and the larger one shrinks
+ * as the smaller grows (lim[] below), giving 237 states. Whether the last bit
+ * was 0 or 1 is kept only when both counts are non-zero.
+ *
+ * A StateMap per model then learns which probability each state really
+ * stands for, so "seen 1,1,0,1" is mapped by experience rather than by a
+ * fixed formula. The table is generated at startup, deterministically. */
+
+static U8 nex_t[256][2];       /* next state after bit 0 / bit 1 */
+static U8 st_n0[256], st_n1[256];
+static int n_states;
+
+static int st_allowed(int a, int b) {
+  static const int lim[7] = {30, 24, 12, 8, 6, 6, 6};
+  int lo = a < b ? a : b, hi = a < b ? b : a;
+  return lo <= 6 && hi <= lim[lo];
+}
+
+static void init_states(void) {
+  static short idx[31][31][2];
+  memset(idx, -1, sizeof idx);
+  n_states = 1; /* state 0 = never seen (0, 0) */
+  idx[0][0][0] = idx[0][0][1] = 0;
+  for (int sum = 1; sum <= 60; ++sum)
+    for (int a = 0; a <= 30; ++a) {
+      int b = sum - a;
+      if (b < 0 || b > 30 || !st_allowed(a, b)) continue;
+      for (int last = 0; last < 2; ++last) {
+        if ((a == 0 || b == 0) && last != (a == 0)) { /* last bit is implied */
+          continue;
+        }
+        st_n0[n_states] = (U8)a;
+        st_n1[n_states] = (U8)b;
+        idx[a][b][last] = (short)n_states++;
+      }
+      if (a == 0 || b == 0) idx[a][b][!(a == 0)] = idx[a][b][a == 0];
+    }
+  for (int s = 0; s < n_states; ++s)
+    for (int y = 0; y < 2; ++y) {
+      int a = st_n0[s], b = st_n1[s];
+      if (y) { ++b; if (a > 2) a = a / 2 + 1; }
+      else { ++a; if (b > 2) b = b / 2 + 1; }
+      while (!st_allowed(a, b)) {
+        if (y ? b >= a : a >= b) { if (y) --b; else --a; } /* saturate the larger count */
+        else { if (y) --a; else --b; }
+      }
+      nex_t[s][y] = (U8)idx[a][b][y];
+    }
+}
+
+/* StateMap entry: a counter (see above) initialised from the state's counts */
+static U32 statemap_init(int s) {
+  int n0 = st_n0[s], n1 = st_n1[s];
+  U32 p22 = (U32)(((U64)(2 * n1 + 1) << 22) / (U64)(2 * (n0 + n1) + 2));
+  return p22 << 10;
+}
+#endif
+
 /* ---------- mixer: one weight set per selector, inputs are stretched probabilities ---------- */
 
 typedef struct {
@@ -109,7 +190,12 @@ typedef struct {
 
 static void mixer_init(Mixer *m, int nsel) {
   m->w = xcalloc((size_t)nsel * N_INPUTS, sizeof(int));
-  for (int i = 0; i < nsel * N_INPUTS; ++i) m->w[i] = (1 << 16) / 4;
+  /* Each model's main input starts at weight 1/4; extra inputs start at 0. */
+  for (int i = 0; i < nsel * N_INPUTS; ++i) {
+    int j = i % N_INPUTS;
+    int extra = j < N_CTX * INPUTS_PER_CTX && j % INPUTS_PER_CTX != 0;
+    m->w[i] = extra ? 0 : (1 << 16) / 4;
+  }
 }
 
 static int mixer_p(Mixer *m, int sel) {
@@ -164,12 +250,22 @@ static inline U32 hash2(U32 a, U32 b) {
 
 /* ---------- the predictor ---------- */
 
+#if USE_BITHIST
+typedef U8 Slot;       /* a bit-history state */
+#else
+typedef U32 Slot;      /* a probability counter */
+#endif
+
 typedef struct {
-  /* context models */
-  U32 *table[N_CTX];   /* blocks of 16 counters */
+  /* context models: blocks of 16 slots, one block per context and nibble */
+  Slot *table[N_CTX];
   U32 ctxhash[N_CTX];  /* per-byte context hash */
-  U32 *slot[N_CTX];    /* current block */
+  Slot *slot[N_CTX];   /* current block */
   int limit[N_CTX];
+#if USE_BITHIST
+  U32 sm[N_CTX][256];  /* StateMap per model: state -> probability */
+  int st[N_CTX];       /* state used for the current bit */
+#endif
 
   /* history */
   U8 *buf;
@@ -193,8 +289,11 @@ typedef struct {
 static void predictor_init(Predictor *P, U64 cap) {
   memset(P, 0, sizeof *P);
   for (int i = 0; i < N_CTX; ++i) {
-    P->table[i] = xcalloc((size_t)16 << TABLE_BITS, sizeof(U32));
+    P->table[i] = xcalloc((size_t)16 << TABLE_BITS, sizeof(Slot));
     P->limit[i] = i < 2 ? 1023 : 255;
+#if USE_BITHIST
+    for (int s = 0; s < 256; ++s) P->sm[i][s] = s < n_states ? statemap_init(s) : 1u << 31;
+#endif
   }
   for (int i = 0; i < 64 * 2; ++i) P->msm[i] = 1u << 31;
   P->cap = cap ? cap : 1;
@@ -212,6 +311,13 @@ static void select_slots(Predictor *P) {
   for (int i = 0; i < N_CTX; ++i) {
     U32 h = hash2(P->ctxhash[i], nib + 1);
     P->slot[i] = P->table[i] + ((size_t)(h >> (32 - TABLE_BITS)) << 4);
+#if USE_BITHIST
+    /* Slot 0 is never used for a bit (positions are 1..15), so it holds an
+       8-bit check of the context. A mismatch means another context owns the
+       block: start it fresh rather than reuse its histories. */
+    U8 check = (U8)(h & 255);
+    if (P->slot[i][0] != check) { memset(P->slot[i], 0, 16); P->slot[i][0] = check; }
+#endif
   }
 }
 
@@ -267,7 +373,22 @@ static int predict(Predictor *P) {
   Mixer *m = &P->mx;
   int k = (int)P->c0; /* position inside the 16-counter block: 1..15 */
   if (P->bitpos >= 4) k = (int)((P->c0 & ((1u << (P->bitpos - 4)) - 1)) | (1u << (P->bitpos - 4)));
+#if USE_BITHIST
+  for (int i = 0; i < N_CTX; ++i) {
+    int s = P->st[i] = P->slot[i][k];
+    int st = stretch(counter_p(P->sm[i][s]));
+    m->x[INPUTS_PER_CTX * i] = st;
+#if RUN_INPUT
+    /* Run input: a context that has only ever seen one bit value is a strong
+       hint, more so the longer the run. Zero when the history is mixed. */
+    int n0 = st_n0[s], n1 = st_n1[s];
+    m->x[2 * i + 1] = n0 == 0 && n1 > 0 ? 64 * (n1 < 16 ? n1 : 16)
+                    : n1 == 0 && n0 > 0 ? -64 * (n0 < 16 ? n0 : 16) : 0;
+#endif
+  }
+#else
   for (int i = 0; i < N_CTX; ++i) m->x[i] = stretch(counter_p(P->slot[i][k]));
+#endif
 
   /* match model input */
   int lenb = 0;
@@ -278,15 +399,15 @@ static int predict(Predictor *P) {
       P->mbit = (expected >> (7 - P->bitpos)) & 1;
       int l = P->mlen < 63 ? P->mlen : 63;
       lenb = l < 16 ? 1 : l < 32 ? 2 : 3;
-      m->x[N_CTX] = stretch(counter_p(P->msm[l * 2 + P->mbit]));
+      m->x[N_INPUTS - 2] = stretch(counter_p(P->msm[l * 2 + P->mbit]));
     } else {
       P->mlen = 0;
-      m->x[N_CTX] = 0;
+      m->x[N_INPUTS - 2] = 0;
     }
   } else {
-    m->x[N_CTX] = 0;
+    m->x[N_INPUTS - 2] = 0;
   }
-  m->x[N_CTX + 1] = 256;
+  m->x[N_INPUTS - 1] = 256;
 
   P->pr_mix = mixer_p(m, (int)P->c0 + 256 * lenb);
   int p1 = apm_p(&P->a1, P->pr_mix, (int)P->c0);
@@ -300,7 +421,15 @@ static int predict(Predictor *P) {
 static void update(Predictor *P, int y) {
   int k = (int)P->c0;
   if (P->bitpos >= 4) k = (int)((P->c0 & ((1u << (P->bitpos - 4)) - 1)) | (1u << (P->bitpos - 4)));
+#if USE_BITHIST
+  for (int i = 0; i < N_CTX; ++i) {
+    counter_update(&P->sm[i][P->st[i]], y, SM_LIMIT);
+    P->slot[i][k] = nex_t[P->st[i]][y];
+  }
+  (void)k;
+#else
   for (int i = 0; i < N_CTX; ++i) counter_update(&P->slot[i][k], y, P->limit[i]);
+#endif
   if (P->mbit >= 0) {
     int l = P->mlen < 63 ? P->mlen : 63;
     counter_update(&P->msm[l * 2 + P->mbit], y, 1023);
@@ -454,5 +583,8 @@ int main(int argc, char **argv) {
   }
   init_stretch();
   init_dt();
+#if USE_BITHIST
+  init_states();
+#endif
   return argv[1][0] == 'c' ? compress(argv[2], argv[3]) : decompress(argv[2], argv[3]);
 }
