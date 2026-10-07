@@ -126,6 +126,9 @@ typedef uint64_t U64;
 #ifndef APM_EXT
 #define APM_EXT 0
 #endif
+#ifndef MIX2_O1BITS
+#define MIX2_O1BITS 8      /* high bits of the previous byte used by the order-1 selector */
+#endif
 #ifndef APM_W0
 #define APM_W0 0            /* weight of the mixer output against each APM in the final average */
 #endif
@@ -454,7 +457,7 @@ static void predictor_init(Predictor *P, U64 cap, U8 *extbuf) {
 #if MIX2
   {
     /* weight-set counts of the extra selectors, in MIX2_SETS bit order */
-    static const int nsel[4] = {1 << 16, 16 * 256, 64 * 8, 8 * 256};
+    static const int nsel[4] = {256 << MIX2_O1BITS, 16 * 256, 64 * 8, 8 * 256};
     int j = 0;
     for (int b = 0; b < 4; ++b)
       if (MBIT(b)) { P->m1nsel[j] = nsel[b]; P->m1[j].w = mixer_weights(nsel[b]); ++j; }
@@ -674,7 +677,7 @@ static int predict(Predictor *P) {
 #define MIX1_RUN(S_) do { Mix1 *q = &P->m1[j]; q->sel = (S_) * N_INPUTS; \
       q->dot = mix_dot(m->x, q->w + q->sel); q->pr = squash(q->dot); \
       m2->x[++j] = q->dot; } while (0)
-    if (MBIT(0)) MIX1_RUN(c0 | (int)((P->c4 & 0xff) << 8));
+    if (MBIT(0)) MIX1_RUN(c0 | (int)(((P->c4 & 0xff) >> (8 - MIX2_O1BITS)) << 8));
     if (MBIT(1)) MIX1_RUN((P->mlen < 15 ? P->mlen : 15) * 256 + c0);
 #if USE_BITHIST
     if (MBIT(2)) {
