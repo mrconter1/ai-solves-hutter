@@ -23,16 +23,35 @@ award is `500,000 EUR x (1 - S/L)`, where `L` is the current record.
 - The decompressor gets no outside input. Any dictionary or model weights count toward `S`.
 - Source code must be documented and open source.
 
-## Results so far
+## Leaderboard
 
-Full log: [`results/results.csv`](results/results.csv). Every row was round-trip verified byte for byte.
+The official enwik9 records, with this repo's entries (written by **Claude Opus 5.5**)
+in bold. The comparable number is bits per character (bpc): the total size
+(compressor plus archive) x 8, divided by the input length. Lower is better.
 
-| Solution | Input | Archive bytes | bpc | Compress | Decompress | Peak RAM |
+| Entry | Program | Date | Input | Total bytes | bpc | vs record |
 |---|---|---|---|---|---|---|
-| [cm1](solutions/cm1) | enwik7 (10 MB) | 2,449,272 | 1.959 | 25 s | 20 s | 1.7 GB |
-| [cm1](solutions/cm1) | enwik8 (100 MB) | 22,075,602 | 1.766 | 237 s | 179 s | 1.9 GB |
+| Vladimir Ivanov | fx2-cmix-T | 2026-07-24 | enwik9 | 100,424,672 | 0.803 | record |
+| David Freelan | cmix-obias | 2026-07-19 | enwik9 | 108,521,870 | 0.868 | +8.1% |
+| Ibrahim Marcouch & Kaido Orav | cmix-lex | 2026-06-26 | enwik9 | 109,671,639 | 0.877 | +9.2% |
+| Kaido Orav & Byron Knoll | fx2-cmix | 2024-09-03 | enwik9 | 110,793,128 | 0.886 | +10.3% |
+| Kaido Orav | fx-cmix | 2024-02-02 | enwik9 | 112,578,322 | 0.901 | +12.1% |
+| Saurabh Kumar | fast cmix | 2023-07-16 | enwik9 | 114,156,155 | 0.913 | +13.7% |
+| Artemiy Margaritov | starlit | 2021-05-31 | enwik9 | 115,352,938 | 0.923 | +14.9% |
+| Alexander Rhatushnyak | phda9 (2020 baseline) | 2019-07-04 | enwik9 | 116,673,681 | 0.933 | +16.2% |
+| **Claude Opus 5.5** | **[cm1](solutions/cm1)** | **2026-10-07** | **enwik9** | **run in progress** | | |
+| **Claude Opus 5.5** | **[cm1](solutions/cm1)** | **2026-10-07** | **enwik8** | **22,094,170** | **1.767** | **n/a (enwik8)** |
+| **Claude Opus 5.5** | **[cm1](solutions/cm1)** | **2026-10-07** | **enwik7** | **2,467,840** | **1.974** | **n/a (enwik7)** |
 
-Times are from an AMD Ryzen 5 PRO 7540U laptop under WSL, pinned to one core.
+"vs record" is `S / record - 1`: how much bigger an entry is than
+the record. It is only defined on enwik9. bpc drops as the input grows,
+because the model has seen more text, so the enwik8 and enwik7 rows overstate
+the gap. Official figures come from [prize.hutter1.net](http://prize.hutter1.net/).
+
+Run details for this repo's entries are in [`results/results.csv`](results/results.csv).
+Every row there was round-trip verified byte for byte. cm1 took 237 s to
+compress enwik8 and 179 s to decompress it, at 1.9 GB peak RAM, on an AMD
+Ryzen 5 PRO 7540U laptop under WSL, pinned to one core.
 
 ## Layout
 
