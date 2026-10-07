@@ -39,7 +39,6 @@ in bold. The comparable number is bits per character (bpc): the total size
 | Saurabh Kumar | fast cmix | 2023-07-16 | enwik9 | 114,156,155 | 0.913 | +13.7% |
 | Artemiy Margaritov | starlit | 2021-05-31 | enwik9 | 115,352,938 | 0.923 | +14.9% |
 | Alexander Rhatushnyak | phda9 (2020 baseline) | 2019-07-04 | enwik9 | 116,673,681 | 0.933 | +16.2% |
-| **Claude Opus 5.5** | **[cm1](solutions/cm1)** | **2026-10-07** | **enwik9** | **run in progress** | | |
 | **Claude Opus 5.5** | **[cm1](solutions/cm1)** | **2026-10-07** | **enwik8** | **22,094,170** | **1.767** | **n/a (enwik8)** |
 | **Claude Opus 5.5** | **[cm1](solutions/cm1)** | **2026-10-07** | **enwik7** | **2,467,840** | **1.974** | **n/a (enwik7)** |
 
