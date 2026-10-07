@@ -71,7 +71,8 @@ ai-solves-hutter/
 │   ├── fetch.sh          downloads enwik9, cuts the enwik8/enwik7 slices
 │   ├── limits.sh         the contest limits run.sh enforces
 │   ├── run.sh            full round trip under the limits, logs to results/
-│   ├── cloud/            release runs on a throwaway cloud VM
+│   ├── remote-run.sh     one run on any fresh Linux box (cloud VM or your own)
+│   ├── cloud/            Google Cloud adapter: throwaway VM per run
 │   └── tune.sh           (planned) parameter search on enwik7/enwik8
 ├── tools/bitcost/        where the bits go, per region type (text, links, templates, ...)
 ├── results/results.csv   every run of every attempt: sizes, bpc, time, RAM, disk, verified
@@ -108,26 +109,37 @@ bench/run.sh cm1 enwik9             # the real thing, about 2 hours for cm1
 From Git Bash, prefix `wsl` calls with `MSYS_NO_PATHCONV=1`, otherwise
 `/mnt/c/...` paths get rewritten to Windows paths.
 
-## Running in the cloud
+## Running on a clean machine (any cloud, or your own box)
 
-Long runs go to a throwaway Google Cloud VM, so they don't depend on this
-laptop's RAM:
+Release runs should happen on a clean Linux machine, not a busy laptop. The
+machine-side logic is provider neutral:
 
 ```bash
-bench/cloud/gcp-run.sh cm2 enwik9                    # starts a VM, returns at once
-bench/cloud/gcp-fetch.sh                             # list runs and their status
-bench/cloud/gcp-fetch.sh <run-id>                    # log tail; appends the row when done
+git clone https://github.com/mrconter1/ai-solves-hutter && cd ai-solves-hutter
+sudo bench/remote-run.sh cm2 enwik9 out/      # installs the toolchain, fetches data, runs, verifies
+cat out/STATUS out/result.csv                 # OK + the result row
 ```
 
-The VM gets the committed tree (`git archive HEAD`), runs `bench/run.sh` with
-the same limits as locally, uploads the result row and logs to a bucket, and
-deletes itself. `--max-run-duration` deletes it anyway if anything hangs, so
-it can't keep billing. The default machine is `n2d-standard-4` (AMD EPYC, 16 GB,
-about $0.19/h), so an enwik9 round trip for cm1 or cm2 costs about $1.
+That works on any fresh Debian or Ubuntu machine with 16 GB of RAM: a VM on
+any cloud, a rented server or your own computer. Run it as root, because the
+sandbox uses `unshare --root`, which Ubuntu 24.04 restricts for normal users.
 
-The smoke test ran cm2 on enwik7 in 14 s each way on an EPYC 7B13, against
-29 s on the dev laptop. The laptop is the slower machine, so laptop timings
-say little about the 50 h limit; release timings come from the cloud.
+**Google Cloud adapter.** `bench/cloud/` wraps that for Google Cloud, so a run
+can be started from a laptop without logging in to anything:
+
+```bash
+bench/cloud/gcp-run.sh cm2 enwik9             # starts a throwaway VM, returns at once
+bench/cloud/gcp-fetch.sh                      # list runs and their status
+bench/cloud/gcp-fetch.sh <run-id>             # log tail; appends the row when done
+```
+
+The VM gets the committed tree (`git archive HEAD`), runs
+`bench/remote-run.sh`, uploads the results to a bucket and deletes itself.
+`--max-run-duration` deletes it anyway if anything hangs, so it can't keep
+billing. The default machine is `n2d-standard-4` (AMD EPYC, 16 GB, about
+$0.19/h), so an enwik9 round trip for cm1 or cm2 costs about $1. An adapter
+for another provider only needs to do the same three things: get the tree
+onto a VM, run `bench/remote-run.sh`, and bring `out/` back.
 
 ## How the contest limits are enforced
 
@@ -147,12 +159,12 @@ The numbers live in [`bench/limits.sh`](bench/limits.sh).
 A run that breaks a limit is still logged. `verified` then says why, for
 example `NO (compress over time limit)`.
 
-**Time calibration.** The prize times runs on "a 2.7 GHz i7" class core. The
-dev laptop's Ryzen 5 PRO 7540U is estimated to be about 2x faster per core
-(`SPEED_FACTOR=2.0`), so the limit applied here is 25 h. That factor is an
-estimate from clock speed and IPC, not a measurement. The FAQ's rule of thumb
-(500,000 / GeekBench 5 score hours) can replace it once both machines have a
-score. Timings also get noisy when other heavy jobs share the machine.
+**Time calibration.** The prize times runs on "a 2.7 GHz i7" class core.
+cm2 on enwik7 took 14 s per direction on a Google Cloud n2d (AMD EPYC 7B13)
+and 29 s on the dev laptop under WSL. We assume the contest machine is about
+as fast as the n2d, so `SPEED_FACTOR=1.0` and the limit is 50 h. That
+assumption is unmeasured. A slower machine only makes the limit more generous
+than the contest's, which is why release timings come from the cloud.
 
 **Binary size.** glibc's static runtime adds about 730 KB to the score, which
 is 0.7% of the record. `build.sh` uses `musl-gcc` when it is installed

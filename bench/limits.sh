@@ -4,15 +4,16 @@
 # machine, timed on "a 2.7 GHz i7" class core.
 TIME_LIMIT_H=${TIME_LIMIT_H:-50}
 
-# How much faster this machine is than the contest's test machine, single
-# core. The limit applied here is TIME_LIMIT_H / SPEED_FACTOR.
+# How much faster the machine running the benchmark is than the contest's test
+# machine, single core. The limit applied is TIME_LIMIT_H / SPEED_FACTOR.
 #
-# ESTIMATE, not measured: the dev laptop is a Ryzen 5 PRO 7540U (Zen 4, up to
-# 4.9 GHz). Against a 2.7 GHz-class Skylake/Kaby Lake i7 that is roughly
-# 1.3x clock x 1.4x IPC, so about 2x. A run that fits in 25 h here should
-# fit in 50 h there. The FAQ's own rule of thumb (500,000 / GeekBench 5 score
-# hours) can replace this once a score for both machines is at hand.
-SPEED_FACTOR=${SPEED_FACTOR:-2.0}
+# Measured 2026-10-07, cm2 on enwik7: 14 s per direction on a Google Cloud
+# n2d (AMD EPYC 7B13), 29 s on the dev laptop (Ryzen 5 PRO 7540U under WSL).
+# The contest's reference is "a 2.7 GHz i7" class core; we assume it is about
+# as fast as the n2d, so the default is 1.0. That assumption is unmeasured.
+# A slower machine (like the laptop) only makes the limit more generous than
+# the contest's, so release timings should come from the cloud.
+SPEED_FACTOR=${SPEED_FACTOR:-1.0}
 
 # Memory: under 10 GB working RAM. Applied as an address-space cap (ulimit -v),
 # which is stricter than resident memory.

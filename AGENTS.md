@@ -45,7 +45,8 @@ bench/fetch.sh                                # data: enwik9 + enwik8/enwik7 sli
 bench/run.sh <attempt> enwik7                 # quick sanity check, about a minute
 bench/run.sh <attempt> enwik8                 # accept or reject a step, a few minutes
 NOTE="step 3: wiki contexts" bench/run.sh <attempt> enwik8   # note goes into the CSV
-bench/cloud/gcp-run.sh <attempt> enwik9       # release run on Google Cloud
+sudo bench/remote-run.sh <attempt> enwik9 out/  # release run on any clean Linux machine
+bench/cloud/gcp-run.sh <attempt> enwik9       # same, on a throwaway Google Cloud VM
 tools/bitcost/                                # where the bits go, per region type
 ```
 
