@@ -52,6 +52,10 @@ predates the sandboxed harness and used an 18.5 KB dynamically linked binary.
 The self-contained static (musl) build of the same code is 50.6 KB, which
 would make the total 180,606,780 bytes.
 
+**To do:** cm1's enwik9 row needs a re-run under the sandboxed harness, with
+the static musl binary, so that every number in it comes from the current
+rules. Until then, treat the row as provisional.
+
 Development runs on the smaller enwik7 and enwik8 slices are logged with all
 the others in [`results/results.csv`](results/results.csv).
 
