@@ -115,16 +115,16 @@ typedef uint64_t U64;
  *   1 order-1 byte    2 match length    4 order-3/6 confidence    8 parse kind
  * APM_EXT adds two APMs (order-2 hashed, match state) to the final stage. */
 #ifndef MIX2
-#define MIX2 0
+#define MIX2 1
 #endif
 #ifndef MIX2_SETS
-#define MIX2_SETS 5
+#define MIX2_SETS 4          /* confidence selector only: best gain per time on enwik8 */
 #endif
 #ifndef MIX2_LR
 #define MIX2_LR 2
 #endif
 #ifndef APM_EXT
-#define APM_EXT 0
+#define APM_EXT 1
 #endif
 #ifndef MIX2_O1BITS
 #define MIX2_O1BITS 8      /* high bits of the previous byte used by the order-1 selector */
