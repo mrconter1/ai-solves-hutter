@@ -15,3 +15,5 @@ date_utc,commit,attempt,model,input,input_bytes,archive_bytes,binary_bytes,total
 2026-10-07T19:46:35Z,d673c5a,cm2,Claude Opus 5.5,enwik8,100000000,18602720,58768,18661488,1.4929,n/a,177.62,170.28,2125,2125,118,yes,AMD EPYC 7B13,cm2 step 4: preprocessing (dev size)
 2026-10-07T19:47:09Z,d673c5a,cm2,Claude Opus 5.5,enwik8,100000000,18664637,58768,18723405,1.4979,n/a,181.41,183.06,2130,2130,118,yes,AMD EPYC 7B13,cm2 step 4: preprocessing PP_K1=40 (dev size); cflags=-DPP_K1=40
 2026-10-07T20:26:35Z,bc9a221,cm1,Claude Opus 5.5,enwik9,1000000000,180556196,46480,180602676,1.4448,+79.8%,1149.96,1097.62,2781,2781,1180,yes,AMD EPYC 7B13,cm1 re-run under the sandboxed harness (cloud)
+2026-10-07T20:49:31Z,0736926,cm2,Claude Opus 5.5,enwik8,100000000,18443050,58768,18501818,1.4801,n/a,200.44,195.5,2128,2128,118,yes,AMD EPYC 7B13,cm2 step 5: 2-layer mixing (conf selector) + extra APMs (dev size)
+2026-10-07T20:59:14Z,0736926,cm2,Claude Opus 5.5,enwik8,100000000,18358749,58768,18417517,1.4734,n/a,237.74,232.91,2134,2134,118,yes,AMD EPYC 7B13,cm2 step 5 variant: order-1 + conf selectors (dev size); cflags=-DMIX2_SETS=5

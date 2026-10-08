@@ -28,6 +28,12 @@ Build flags:
 | `-DPP_K1=n` | Words with a one-byte code (default 32) |
 | `-DPP_MINLEN=n`, `-DPP_MINCOUNT=n` | Shortest word and fewest occurrences worth a code (default 2 and 8) |
 | `-DPP_SORT=n` | Order of the 2-byte codes: 0 by frequency, 1 alphabetical (default), 2 by suffix |
+| `-DMIX2=0` | Step 5 off for mixing: one mixer, exactly as step 4 (default 1) |
+| `-DMIX2_SETS=mask` | Extra first-layer mixers by weight-set selector: 1 order-1 byte, 2 match length, 4 order-3/6 confidence, 8 parse kind. Default 4 |
+| `-DMIX2_O1BITS=n` | High bits of the previous byte used by the order-1 selector (default 8) |
+| `-DMIX2_LR=n` | Second-layer mixer learning rate (default 2) |
+| `-DAPM_EXT=0` | Step 5 off for the final stage: only the two step 1 APMs (default 1) |
+| `-DAPM_W0=n` | Weight of the mixer output against each APM in the final average (default 0, APMs only) |
 
 ## Ablation
 
@@ -43,11 +49,67 @@ Every step, measured on enwik8 (10^8 bytes). Archive bytes exclude the binary.
 | 3 | Variant: all 5 structure models (`WIKICTX=55`), not kept | 19,008,680 | 1.521 | -2.3% | 255 s / 255 s (cloud n2d) | 2.4 GB |
 | 4 | Reversible transform: capital flags, entity bytes, word dictionary (32 one-byte codes) | 18,602,720 | 1.488 | **-2.4%** | 178 s / 170 s (cloud n2d) | 2.1 GB |
 | 4 | Variant: 40 one-byte codes (`PP_K1=40`), not kept | 18,664,637 | 1.493 | -2.1% | 181 s / 183 s (cloud n2d) | 2.1 GB |
+| 5 | 2-layer mixing (extra mixer chosen by order-3/6 confidence) + order-2 and match APMs, APMs only in the final average | 18,443,050 | 1.475 | **-0.86%** | 200 s / 196 s (cloud n2d) | 2.1 GB |
+| 5 | Variant: also an order-1 selector (`MIX2_SETS=5`), not kept | 18,358,749 | 1.469 | -1.31% | 238 s / 233 s (cloud n2d) | 2.1 GB |
 
 Times come from different machines until a cloud baseline exists: the cloud
 n2d core is about twice as fast as the laptop. On the same machine, step 1
 costs about 15% more time (enwik7: 32 s to 37 s compressing on the laptop).
 The bpc column is archive only; the leaderboard adds the binary.
+
+## Step 5: two-layer mixing and more APMs
+
+The main mixer (weight set chosen by the partial byte, match length and parse
+state, from step 3) is now one of several first-layer mixers. They all see
+the same inputs, but each picks its weight set by a different context and
+learns from its own error. A small second-layer mixer, with a weight set per
+partial byte, combines their outputs. The final stage gets two more APMs, one
+on a hashed order-2 context and one on the match state (expected bit and
+length), and the final probability is now the plain average of the four APMs
+(`APM_W0=0`), without the raw mixer output.
+
+Shipped: one extra first-layer mixer, chosen by the confidence of the order-3
+and order-6 models (their bit-history counts, bucketed, times the bit
+position). Everything is behind `MIX2` and `APM_EXT`; `MIX2=0 APM_EXT=0`
+reproduces step 4 exactly (enwik7 2,046,119).
+
+**Per idea on enwik7** (step 4: 2,046,119; laptop runs before WSL was retired,
+times are noisy):
+
+| Variant | enwik7 bytes | vs step 4 |
+|---|---|---|
+| Extra APMs only, mixer weight 4 | 2,044,624 | -0.07% |
+| Extra APMs only, APMs only (`APM_W0=0`, cloud) | 2,037,339 | -0.43% |
+| All four extra selectors, no extra APMs | 2,029,937 | -0.79% |
+| Order-1 selector alone | 2,033,791 | -0.60% |
+| Match-length selector alone | 2,043,284 | -0.14% |
+| Confidence selector alone | 2,038,554 | -0.37% |
+| Parse-kind selector alone | 2,041,797 | -0.21% |
+| Second-layer rate 1 / 4 (all selectors) | 2,030,539 / 2,029,703 | -0.76% / -0.80% |
+| Order-1 + confidence, APMs, mixer weight 4 / 2 / 1 / 0 | 2,029,168 / 2,027,109 / 2,025,844 / 2,024,596 | -0.83% / -0.93% / -0.99% / -1.05% |
+| **Confidence selector + APMs, weight 0 (shipped)** | **2,030,533** | **-0.76%** |
+| Order-1 + confidence + kind, weight 0 | 2,023,177 | -1.12% |
+| All four selectors, weight 0 | 2,022,900 | -1.13% |
+
+**enwik8 candidates**, one cloud batch VM (five variants side by side, so the
+times are inflated by contention and only comparable to each other):
+
+| Variant | enwik8 bytes | vs step 4 | Decompress time vs step 4 in the batch |
+|---|---|---|---|
+| Confidence selector (shipped) | 18,443,050 | -0.86% | +38% |
+| Order-1 + confidence | 18,358,749 | -1.31% | +57% |
+| Same, order-1 from the top 5 bits only | 18,397,985 | -1.10% | +55% |
+| Order-1 + confidence + kind | 18,354,105 | -1.34% | +72% |
+
+On a dedicated core the shipped variant costs only +13% / +15% (200 s / 196 s
+against 178 s / 170 s), and order-1 + confidence +34% / +37%. The order-1
+selector (65,536 weight sets) is the expensive one: its extra -0.46% isn't worth
+about +20% time, so it stays off; it's the first thing to switch on for a
+release if time allows. Fewer order-1 bits don't save time, because the cost
+is the extra mixer, not the size of its table.
+
+Edge cases: all 11 pass on the shipped default (run in the cloud through
+`bench/cloud/gcp-batch.sh`).
 
 ## Step 4: reversible text transform
 
