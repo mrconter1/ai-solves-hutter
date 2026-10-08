@@ -102,8 +102,26 @@ typedef uint64_t U64;
 #ifndef EXTRA_TABLE_BITS
 #define EXTRA_TABLE_BITS 23 /* table size cap for the step 3 models */
 #endif
+/* Step 6: match model. MLONG=n (n >= 12) adds a second hash table keyed on the
+ * last n bytes; a new match is looked up there first, so long repeats are
+ * found even when the short hash slot was overwritten. MATCH_CTX adds a hashed
+ * context model keyed on the byte the match predicts plus its length bucket
+ * and the order-1 (1) or order-2 (2) context. MSM2 indexes the match StateMap
+ * by (length up to 15, expected bit, recent misses 0..3). */
+#ifndef MLONG
+#define MLONG 0
+#endif
+#ifndef MLONG_BITS
+#define MLONG_BITS 22
+#endif
+#ifndef MATCH_CTX
+#define MATCH_CTX 0
+#endif
+#ifndef MSM2
+#define MSM2 0
+#endif
 #define WBIT(n) (((WIKICTX) >> (n)) & 1)
-#define N_EXTRA (WBIT(0) + WBIT(1) + WBIT(2) + WBIT(3) + WBIT(4) + WBIT(5))
+#define N_EXTRA (WBIT(0) + WBIT(1) + WBIT(2) + WBIT(3) + WBIT(4) + WBIT(5) + (MATCH_CTX ? 1 : 0))
 #define N_CTX (8 + N_EXTRA)  /* hashed context models */
 #define N_INPUTS (N_CTX * INPUTS_PER_CTX + 2) /* + match model + bias */
 #ifndef MIXER_LR
@@ -411,7 +429,11 @@ typedef struct {
   U32 *mtab;
   U64 mptr;
   int mlen, mbit;
+  int mmiss;           /* recent match failures, 0..3 (MSM2) */
   U32 msm[64 * 2];
+#if MLONG
+  U32 *mtab2;          /* long-context match pointers */
+#endif
 
   Mixer mx;
   Apm a1, a2;
@@ -449,6 +471,9 @@ static void predictor_init(Predictor *P, U64 cap, U8 *extbuf) {
      ever writes into it the same bytes that are already there */
   P->buf = extbuf ? extbuf : xcalloc(P->cap, 1);
   P->mtab = xcalloc((size_t)1 << MATCH_HASH_BITS, sizeof(U32));
+#if MLONG
+  P->mtab2 = xcalloc((size_t)1 << MLONG_BITS, sizeof(U32));
+#endif
   P->c0 = 1;
   P->atline = 1;
   mixer_init(&P->mx, 256 * 4 * (MIXSEL_PARSE ? 4 : 1));
@@ -602,9 +627,35 @@ static void byte_update(Predictor *P, int c) {
   if (P->mlen > 0 && P->buf[P->mptr % P->cap] == (U8)c) {
     P->mlen++;
     P->mptr++;
+#if MSM2
+    if ((P->mlen & 31) == 0 && P->mmiss > 0) P->mmiss--;
+#endif
   } else {
     P->mlen = 0;
   }
+#if MLONG
+  /* long table first: a verified long match wins over a short one */
+  if (P->pos >= MLONG) {
+    U32 h2 = 0;
+    const U8 *q = P->buf + (P->pos - MLONG);
+    for (int i = 0; i + 4 <= MLONG; i += 4) {
+      U32 w; memcpy(&w, q + i, 4);
+      h2 = hash2(h2, w);
+    }
+    h2 >>= 32 - MLONG_BITS;
+    if (P->mlen == 0) {
+      U64 cand = P->mtab2[h2];
+      if (cand > 0) {
+        int len = 0;
+        while (len < 64 && cand > (U64)len &&
+               P->buf[cand - 1 - len] == P->buf[P->pos - 1 - len])
+          ++len;
+        if (len >= MLONG) { P->mlen = len; P->mptr = cand; }
+      }
+    }
+    P->mtab2[h2] = (U32)P->pos;
+  }
+#endif
   if (P->pos >= MATCH_MIN) {
     U32 h = 0;
     for (int i = 1; i <= MATCH_MIN; ++i) h = hash2(h, P->buf[(P->pos - i) % P->cap]);
@@ -621,6 +672,15 @@ static void byte_update(Predictor *P, int c) {
     }
     P->mtab[h] = (U32)P->pos;
   }
+#if MATCH_CTX
+  /* the byte the match predicts, as context for an ordinary hashed model */
+  {
+    U32 exp = P->mlen > 0 ? (U32)P->buf[P->mptr % P->cap] : 0x100;
+    U32 lb = P->mlen == 0 ? 0 : P->mlen < 16 ? 1 : P->mlen < 32 ? 2 : 3;
+    U32 o = MATCH_CTX >= 2 ? (P->c4 & 0xffff) : (P->c4 & 0xff);
+    P->ctxhash[N_CTX - 1] = hash2(hash2(15, exp | lb << 9), o);
+  }
+#endif
 }
 
 static int predict(Predictor *P) {
@@ -653,9 +713,17 @@ static int predict(Predictor *P) {
       P->mbit = (expected >> (7 - P->bitpos)) & 1;
       int l = P->mlen < 63 ? P->mlen : 63;
       lenb = l < 16 ? 1 : l < 32 ? 2 : 3;
-      m->x[N_INPUTS - 2] = stretch(counter_p(P->msm[l * 2 + P->mbit]));
+#if MSM2
+      int mi = ((P->mlen < 15 ? P->mlen : 15) * 2 + P->mbit) * 4 + P->mmiss;
+#else
+      int mi = l * 2 + P->mbit;
+#endif
+      m->x[N_INPUTS - 2] = stretch(counter_p(P->msm[mi]));
     } else {
       P->mlen = 0;
+#if MSM2
+      if (P->mmiss < 3) P->mmiss++;
+#endif
       m->x[N_INPUTS - 2] = 0;
     }
   } else {
@@ -722,8 +790,13 @@ static void update(Predictor *P, int y) {
   for (int i = 0; i < N_CTX; ++i) counter_update(&P->slot[i][k], y, P->limit[i]);
 #endif
   if (P->mbit >= 0) {
+#if MSM2
+    int mi = ((P->mlen < 15 ? P->mlen : 15) * 2 + P->mbit) * 4 + P->mmiss;
+#else
     int l = P->mlen < 63 ? P->mlen : 63;
-    counter_update(&P->msm[l * 2 + P->mbit], y, 1023);
+    int mi = l * 2 + P->mbit;
+#endif
+    counter_update(&P->msm[mi], y, 1023);
   }
   mixer_update(&P->mx, y);
 #if MIX2
