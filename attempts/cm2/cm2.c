@@ -79,7 +79,7 @@ typedef uint64_t U64;
 #endif
 #define INPUTS_PER_CTX (1 + RUN_INPUT)
 #ifndef SM_LIMIT
-#define SM_LIMIT 1023       /* StateMap adaptation limit */
+#define SM_LIMIT 511        /* StateMap adaptation limit (step 7: 511 beat 1023) */
 #endif
 #else
 #define TABLE_BITS 22       /* 2^22 blocks x 64 bytes = 256 MB per context model */
@@ -93,7 +93,7 @@ typedef uint64_t U64;
 #define APM_RATE 7          /* APM adaptation shift (higher = slower) */
 #endif
 #ifndef MSM_LIMIT
-#define MSM_LIMIT 1023      /* match model StateMap adaptation limit */
+#define MSM_LIMIT 255       /* match model StateMap adaptation limit (step 7) */
 #endif
 /* Step 3: extra context models built on a small wiki parse state (inside a
  * link or template, which part of it, table column, line type, numbers).
@@ -133,7 +133,7 @@ typedef uint64_t U64;
 #define N_CTX (8 + N_EXTRA)  /* hashed context models */
 #define N_INPUTS (N_CTX * INPUTS_PER_CTX + 2) /* + match model + bias */
 #ifndef MIXER_LR
-#define MIXER_LR 4          /* mixer learning rate; swept 1..6 on enwik7, 4 was best */
+#define MIXER_LR 6          /* mixer learning rate; step 7 on enwik8: 6 beat 3, 4, 5, 8 */
 #endif
 /* Step 5: several first-layer mixers, each choosing its weight set by a
  * different context, combined by a small second-layer mixer (MIX2). MIX2_SETS

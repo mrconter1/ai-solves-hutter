@@ -33,7 +33,7 @@
 #define PP_DICT 1        /* word dictionary */
 #endif
 #ifndef PP_K1
-#define PP_K1 32         /* how many words get a one-byte code (swept 0-40 on enwik7) */
+#define PP_K1 24         /* how many words get a one-byte code (step 7 on enwik8: 24 beat 20, 32, 40) */
 #endif
 #ifndef PP_MINLEN
 #define PP_MINLEN 2      /* shortest word worth a code */
