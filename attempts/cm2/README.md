@@ -17,7 +17,7 @@ Build flags:
 | `-DCOST_LOG` | Compression also writes `<archive>.cost`: one float32 per coded byte, the bits spent on it. The archive is unchanged. Read by [tools/bitcost](../../tools/bitcost); lines up with the input only with `-DUSE_PREPROC=0` |
 | `-DUSE_BITHIST=0` | Step 1 off: plain probability counters, exactly as cm1 (default 1) |
 | `-DRUN_INPUT=0` | Step 1 without the per-model run input (default 1) |
-| `-DSM_LIMIT=n` | StateMap adaptation limit (default 1023) |
+| `-DSM_LIMIT=n` | StateMap adaptation limit (default 511 since step 7; was 1023) |
 | `-DUSE_BUCKETS=0` | Step 2 off: one block per hash, replaced on any mismatch, exactly as step 1 (default 1) |
 | `-DTABLE_BITS=n` | 2^n blocks of 16 bytes per context model. 24 = 256 MB per model, about 1.7 GB in total (default, dev). 26 = 1 GB per model, about 7.2 GB in total on enwik9 (release) |
 | `-DWIKICTX=mask` | Step 3 models: 1 word + parse state, 2 order-2 + parse state, 4 line/table column, 8 number, 16 sparse (bytes 2-3 back), 32 word + word before previous. Default 37 (1+4+32); 0 = step 2 exactly |
@@ -25,7 +25,7 @@ Build flags:
 | `-DEXTRA_TABLE_BITS=n` | Table size cap for the step 3 models (default 23, 128 MB each) |
 | `-DUSE_PREPROC=0` | Step 4 off: no transform, old archive format, exactly as step 3 (default 1) |
 | `-DPP_CAPS=0`, `-DPP_ENT=0`, `-DPP_DICT=0` | Step 4 parts off one by one: capital flags, entity bytes, word dictionary (default all 1) |
-| `-DPP_K1=n` | Words with a one-byte code (default 32) |
+| `-DPP_K1=n` | Words with a one-byte code (default 24 since step 7; was 32) |
 | `-DPP_MINLEN=n`, `-DPP_MINCOUNT=n` | Shortest word and fewest occurrences worth a code (default 2 and 8) |
 | `-DPP_SORT=n` | Order of the 2-byte codes: 0 by frequency, 1 alphabetical (default), 2 by suffix |
 | `-DMIX2=0` | Step 5 off for mixing: one mixer, exactly as step 4 (default 1) |
@@ -37,6 +37,10 @@ Build flags:
 | `-DMATCH_CTX=n` | Step 6: a hashed model keyed on the byte the match predicts, its length bucket and the order-1 (1) or order-2 (2) context. Default 2; 0 = step 5 exactly |
 | `-DMLONG=n` | Step 6, not kept: a second match table keyed on the last n bytes, looked up first (default 0 = off) |
 | `-DMSM2=1` | Step 6, not kept: match StateMap indexed by length, expected bit and recent misses (default 0) |
+| `-DMIXER_LR=n` | First-layer mixer learning rate (default 6 since step 7; was 4) |
+| `-DAPM_RATE=n` | APM adaptation shift, higher is slower (default 7) |
+| `-DMSM_LIMIT=n` | Match model StateMap adaptation limit (default 255 since step 7; was 1023) |
+| `-DMATCH_MIN=n` | Bytes of context hashed to find a match (default 7) |
 
 ## Ablation
 
@@ -55,11 +59,58 @@ Every step, measured on enwik8 (10^8 bytes). Archive bytes exclude the binary.
 | 5 | 2-layer mixing (extra mixer chosen by order-3/6 confidence) + order-2 and match APMs, APMs only in the final average | 18,443,050 | 1.475 | **-0.86%** | 200 s / 196 s (cloud n2d) | 2.1 GB |
 | 5 | Variant: also an order-1 selector (`MIX2_SETS=5`), not kept | 18,358,749 | 1.469 | -1.31% | 238 s / 233 s (cloud n2d) | 2.1 GB |
 | 6 | Match byte as context: hashed model on the predicted byte, match length bucket and order-2 (`MATCH_CTX=2`) | 18,384,743 | 1.471 | **-0.32%** | 205 s / 209 s (cloud n2d) | 2.3 GB |
+| 7 | Tuned defaults: `MIXER_LR=6`, `SM_LIMIT=511`, `MSM_LIMIT=255`, `PP_K1=24` | 18,369,270 | 1.470 | **-0.08%** | 223 s / 210 s (cloud n2d) | 2.3 GB |
+| 7 | Release candidate: tuned + `MIX2_SETS=5 WIKICTX=55 TABLE_BITS=26` (plus `EXTRA_TABLE_BITS=24`), batch | 18,155,954 | 1.452 | -1.25% vs step 6 | 495 s / 397 s (batch, shared VM) | 7.9 GB |
 
 Times come from different machines until a cloud baseline exists: the cloud
 n2d core is about twice as fast as the laptop. On the same machine, step 1
 costs about 15% more time (enwik7: 32 s to 37 s compressing on the laptop).
 The bpc column is archive only; the leaderboard adds the binary.
+
+## Release configuration
+
+For the enwik9 release, build with
+
+```
+CFLAGS="-DTABLE_BITS=26 -DMIX2_SETS=5 -DWIKICTX=55"
+```
+
+Each option costs time but nothing in the score, and cm2 runs in well under
+an hour per direction on enwik9 against a 50 h limit. Measured on enwik8 (on
+top of the step 6 base, cloud batches):
+
+| Option | What it adds | enwik8 gain | Cost |
+|---|---|---|---|
+| `TABLE_BITS=26` | 1 GB per context model instead of 256 MB | -0.23% | about 7 GB RAM in total |
+| `MIX2_SETS=5` | Extra first-layer mixer chosen by the order-1 byte | -0.48% | about +18% time |
+| `WIKICTX=55` | Two more structure models (order-2 + parse state, sparse) | -0.31% | about +19% time, +0.3 GB |
+| All three, with the tuned defaults | | -1.25% vs step 6 | |
+
+`EXTRA_TABLE_BITS=24` was worth only -0.03% and adds 0.5 GB, so it stays at
+23 to keep a margin under the 10 GB `ulimit -v` cap: on enwik8 the release
+build peaked at 7.9 GB (with it), and enwik9 adds about 0.9 GB of input
+buffer.
+
+## Step 7: tuning
+
+`bench/tune.sh` writes one-at-a-time sweeps around the defaults, and
+`bench/cloud/gcp-batch.sh` runs them on one cloud VM. Two batches on enwik8,
+against the step 6 default of 18,384,743 bytes:
+
+| Parameter | Tried | Best | enwik8 change |
+|---|---|---|---|
+| `MIXER_LR` | 3, 5, 6, 8 (default 4) | 6 | -0.01% (3: +0.02%) |
+| `SM_LIMIT` | 511 (default 1023) | 511 | -0.01% |
+| `MSM_LIMIT` | 255 (default 1023) | 255 | -0.003% |
+| `PP_K1` | 20, 24 (default 32) | 24 | -0.06% (20: worse than 24) |
+| `EXTRA_TABLE_BITS` | 24 (default 23) | 23 kept | -0.03%, not worth 0.5 GB |
+| `APM_RATE` | 6, 8 (default 7) | 7 | 6: +0.05%, 8: +0.03% |
+| `MATCH_MIN` | 6, 9 (default 7) | 7 | 6: +0.07%, 9: +0.03% |
+| `PP_MINCOUNT` | 4, 16 (default 8) | no effect | the dictionary is capped by free byte values, not by counts |
+
+Together the kept values give -0.08% on the single-core acceptance run
+(18,369,270). The model was already close to a local optimum; the remaining
+gains are in the release options above, which cost time.
 
 ## Step 6: match model
 

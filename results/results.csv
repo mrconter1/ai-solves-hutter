@@ -18,3 +18,4 @@ date_utc,commit,attempt,model,input,input_bytes,archive_bytes,binary_bytes,total
 2026-10-07T20:49:31Z,0736926,cm2,Claude Opus 5.5,enwik8,100000000,18443050,58768,18501818,1.4801,n/a,200.44,195.5,2128,2128,118,yes,AMD EPYC 7B13,cm2 step 5: 2-layer mixing (conf selector) + extra APMs (dev size)
 2026-10-07T20:59:14Z,0736926,cm2,Claude Opus 5.5,enwik8,100000000,18358749,58768,18417517,1.4734,n/a,237.74,232.91,2134,2134,118,yes,AMD EPYC 7B13,cm2 step 5 variant: order-1 + conf selectors (dev size); cflags=-DMIX2_SETS=5
 2026-10-08T01:45:39Z,734a0ee,cm2,Claude Opus 5.5,enwik8,100000000,18384743,58768,18443511,1.4755,n/a,205.17,208.7,2256,2256,118,yes,AMD EPYC 7B13,cm2 step 6: match byte context MATCH_CTX=2 (dev size)
+2026-10-08T06:39:27Z,66a908f,cm2,Claude Opus 5.5,enwik8,100000000,18369270,58768,18428038,1.4742,n/a,223.48,210.34,2253,2253,118,yes,AMD EPYC 7B13,cm2 step 7: tuned
