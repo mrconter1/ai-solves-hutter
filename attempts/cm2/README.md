@@ -34,6 +34,9 @@ Build flags:
 | `-DMIX2_LR=n` | Second-layer mixer learning rate (default 2) |
 | `-DAPM_EXT=0` | Step 5 off for the final stage: only the two step 1 APMs (default 1) |
 | `-DAPM_W0=n` | Weight of the mixer output against each APM in the final average (default 0, APMs only) |
+| `-DMATCH_CTX=n` | Step 6: a hashed model keyed on the byte the match predicts, its length bucket and the order-1 (1) or order-2 (2) context. Default 2; 0 = step 5 exactly |
+| `-DMLONG=n` | Step 6, not kept: a second match table keyed on the last n bytes, looked up first (default 0 = off) |
+| `-DMSM2=1` | Step 6, not kept: match StateMap indexed by length, expected bit and recent misses (default 0) |
 
 ## Ablation
 
@@ -51,11 +54,47 @@ Every step, measured on enwik8 (10^8 bytes). Archive bytes exclude the binary.
 | 4 | Variant: 40 one-byte codes (`PP_K1=40`), not kept | 18,664,637 | 1.493 | -2.1% | 181 s / 183 s (cloud n2d) | 2.1 GB |
 | 5 | 2-layer mixing (extra mixer chosen by order-3/6 confidence) + order-2 and match APMs, APMs only in the final average | 18,443,050 | 1.475 | **-0.86%** | 200 s / 196 s (cloud n2d) | 2.1 GB |
 | 5 | Variant: also an order-1 selector (`MIX2_SETS=5`), not kept | 18,358,749 | 1.469 | -1.31% | 238 s / 233 s (cloud n2d) | 2.1 GB |
+| 6 | Match byte as context: hashed model on the predicted byte, match length bucket and order-2 (`MATCH_CTX=2`) | 18,384,743 | 1.471 | **-0.32%** | 205 s / 209 s (cloud n2d) | 2.3 GB |
 
 Times come from different machines until a cloud baseline exists: the cloud
 n2d core is about twice as fast as the laptop. On the same machine, step 1
 costs about 15% more time (enwik7: 32 s to 37 s compressing on the laptop).
 The bpc column is archive only; the leaderboard adds the binary.
+
+## Step 6: match model
+
+The match model finds the last occurrence of the previous 7 bytes and
+predicts that the byte which followed it comes again. Step 6 tried three
+ways to get more out of it, all as one cloud batch on enwik8 (8 variants on
+one VM, every round trip verified; the edge cases passed on the default
+build):
+
+| Variant | enwik8 archive bytes | vs step 5 |
+|---|---|---|
+| Step 5 | 18,443,050 | |
+| **Match byte as context, + order-2 (`MATCH_CTX=2`, kept)** | **18,384,743** | **-0.32%** |
+| Match byte as context, + order-1 (`MATCH_CTX=1`) | 18,404,562 | -0.21% |
+| `MATCH_CTX=2` + long table (24) + MSM2 | 18,385,115 | -0.32% |
+| `MATCH_CTX=1` + long table (20) + MSM2 | 18,404,781 | -0.21% |
+| Long match table, 20 bytes (`MLONG=20`) | 18,442,720 | -0.00% |
+| Long match table, 32 bytes (`MLONG=32`) | 18,443,968 | +0.00% |
+| Match StateMap with recent misses (`MSM2=1`) | 18,446,052 | +0.02% |
+
+- **Kept: the predicted byte as context.** A hashed model keyed on the byte
+  the match expects, the match length bucket and the previous two bytes. It
+  learns how far to trust a match in each context, which the single match
+  input could not. This is the PAQ "match byte as context" idea.
+- **Not kept: a long-context match table.** With 10^8 bytes, the short
+  7-byte hash already finds nearly every useful repeat; looking up a 20 or
+  32 byte context first changes almost nothing.
+- **Not kept: miss-aware match confidence.** Recent misses were already
+  visible to the mixer through the match length reset.
+
+Acceptance on a single cloud core (n2d, EPYC 7B13), round trip verified:
+18,384,743 archive bytes, 18,443,511 with the binary (step 5: 18,501,818),
+205 s to compress and 209 s to decompress, about +2.5% time against step 5's
+200 s, and 2.3 GB peak RAM (+0.1 GB for the extra model's 128 MB table).
+Batch timings are not comparable (8 variants shared the VM).
 
 ## Step 5: two-layer mixing and more APMs
 
