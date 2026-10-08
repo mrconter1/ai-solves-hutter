@@ -86,7 +86,15 @@ typedef uint64_t U64;
 #define INPUTS_PER_CTX 1
 #endif
 #define MATCH_HASH_BITS 24  /* 64 MB of match pointers */
+#ifndef MATCH_MIN
 #define MATCH_MIN 7         /* bytes of context hashed to find a match */
+#endif
+#ifndef APM_RATE
+#define APM_RATE 7          /* APM adaptation shift (higher = slower) */
+#endif
+#ifndef MSM_LIMIT
+#define MSM_LIMIT 1023      /* match model StateMap adaptation limit */
+#endif
 /* Step 3: extra context models built on a small wiki parse state (inside a
  * link or template, which part of it, table column, line type, numbers).
  * WIKICTX is a bitmask; each bit adds one hashed model (see byte_update):
@@ -796,7 +804,7 @@ static void update(Predictor *P, int y) {
     int l = P->mlen < 63 ? P->mlen : 63;
     int mi = l * 2 + P->mbit;
 #endif
-    counter_update(&P->msm[mi], y, 1023);
+    counter_update(&P->msm[mi], y, MSM_LIMIT);
   }
   mixer_update(&P->mx, y);
 #if MIX2
@@ -806,11 +814,11 @@ static void update(Predictor *P, int y) {
   }
   mix2_update(&P->m2, y);
 #endif
-  apm_update(&P->a1, y, 7);
-  apm_update(&P->a2, y, 7);
+  apm_update(&P->a1, y, APM_RATE);
+  apm_update(&P->a2, y, APM_RATE);
 #if APM_EXT
-  apm_update(&P->a3, y, 7);
-  apm_update(&P->a4, y, 7);
+  apm_update(&P->a3, y, APM_RATE);
+  apm_update(&P->a4, y, APM_RATE);
 #endif
 
   P->c0 = (P->c0 << 1) | (U32)y;

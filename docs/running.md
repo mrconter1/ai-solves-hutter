@@ -58,6 +58,13 @@ bench/cloud/gcp-batch.sh cm2 enwik7 work/variants.txt   # one n2d-standard-8 VM
 bench/cloud/gcp-fetch.sh <run-id>                       # results table when done
 ```
 
+For parameter sweeps, `bench/tune.sh` writes the variants file: one variant
+per value, around the current defaults (or around `BASE_FLAGS`):
+
+```bash
+bench/tune.sh MIXER_LR=3,5 APM_RATE=6,8 > work/variants.txt
+```
+
 `bench/batch-run.sh` builds every variant (`<name> <CFLAGS...>` per line) and
 round-trips it, as many in parallel as cores and RAM allow, then writes a
 table sorted by size. Every batch first runs `tools/edgecases.sh` on the

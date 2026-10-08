@@ -44,6 +44,7 @@ size. The record and the prize threshold are in the README.
 attempts/<name>/        one compressor per folder: source, build.sh, README.md, AUTHOR
 bench/run.sh            round trip under the contest limits (docs/rules.md)
 bench/remote-run.sh     one run on any fresh Linux machine
+bench/batch-run.sh      many build variants in parallel (bench/tune.sh writes sweeps)
 bench/cloud/            Google Cloud adapter: a throwaway VM per run
 bench/fetch.sh          enwik9 plus the enwik8/enwik7 slices
 tools/bitcost/          where the bits go, per region type
@@ -62,6 +63,7 @@ NOTE="step 3: wiki contexts" bench/run.sh <attempt> enwik8   # note goes into th
 sudo bench/remote-run.sh <attempt> enwik9 out/  # release run on any clean Linux machine
 bench/cloud/gcp-run.sh <attempt> enwik9       # same, on a throwaway Google Cloud VM
 bench/cloud/gcp-batch.sh <attempt> enwik7 <variants-file>  # many CFLAGS variants on one cloud VM, plus edge cases
+bench/tune.sh NAME=v1,v2 ... > work/variants.txt   # one-at-a-time parameter sweep for gcp-batch.sh
 tools/bitcost/                                # where the bits go, per region type
 ```
 
