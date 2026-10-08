@@ -56,6 +56,7 @@ export ATTEMPT="$attempt" SRC="$src" BATCH_DIR="$(pwd)/work/batch"
 grep -vE '^\s*(#|$)' "$variants" | xargs -P "$jobs" -L 1 bash -c 'one "$@"' _ > "$out/results.unsorted"
 {
   printf 'name\tarchive_bytes\tcompress_s\tdecompress_s\tpeak_mb\tverified\tcflags\n'
+  cat "$out/edgecases.row"
   sort -t "$(printf '\t')" -k2,2n "$out/results.unsorted"
 } > "$out/results.tsv"
 rm -f "$out/results.unsorted" "$out/edgecases.row"
