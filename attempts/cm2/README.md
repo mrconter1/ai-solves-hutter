@@ -1,9 +1,20 @@
 # cm2
 
-The second attempt. It starts as an exact copy of [cm1](../cm1): same model,
-same output. Each step from the plan is added behind a compile-time flag,
-measured on enwik8, and kept only if it gains. The full enwik9 run happens
-once, when all steps are in.
+The second attempt, written by Claude Opus 5.5. It started as an exact copy of
+[cm1](../cm1), and each step from the plan was added behind a compile-time
+flag, measured on enwik8 and kept only if it gained.
+
+**Frozen 2026-10-08.** Final enwik9 result, round trip verified on a Google
+Cloud n2d core (AMD EPYC 7B13) under the sandboxed harness, commit `bf52f3d`:
+
+| Build | Archive | Total (with 58,768-byte binary) | bpc | vs cm1 | Compress / decompress | Peak RAM |
+|---|---|---|---|---|---|---|
+| **Release** (`-DTABLE_BITS=26 -DMIX2_SETS=5 -DWIKICTX=55`) | **146,098,743** | **146,157,511** | **1.169** | **-19.1%** | 41.7 / 41.2 min | 7.6 GB |
+| Default | 149,757,589 | 149,816,357 | 1.198 | -17.0% | 35.9 / 35.3 min | 2.8 GB |
+
+The release build is the leaderboard entry: rank 9, +45.5% vs the record.
+The preprocessing stage shrank enwik9 from 1,000,000,000 to 738,264,663 bytes
+before modelling, with a 2,584-word dictionary. Further work goes into cm3.
 
 ```
 cm2 c <input> <archive>

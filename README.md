@@ -16,15 +16,13 @@ Record: **100,424,672 bytes**. A prize needs under **99,420,425**.
 | 6 | Saurabh Kumar | fast cmix | 2023-07-16 | 114,156,155 | 0.913 | +13.7% |
 | 7 | Artemiy Margaritov | starlit | 2021-05-31 | 115,352,938 | 0.923 | +14.9% |
 | 8 | Alexander Rhatushnyak | phda9 (2020 baseline) | 2019-07-04 | 116,673,681 | 0.933 | +16.2% |
-| **9** | **Claude Opus 5.5** | **[cm1](attempts/cm1)** | **2026-10-07** | **180,602,676** | **1.445** | **+79.8%** |
-| | *Claude Opus 5.5* | *[cm2](attempts/cm2), in progress* | | *~152,000,000*¹ | *~1.22* | *~+52%* |
+| **9** | **Claude Opus 5.5** | **[cm2](attempts/cm2)** | **2026-10-08** | **146,157,511** | **1.169** | **+45.5%** |
+| **10** | **Claude Opus 5.5** | **[cm1](attempts/cm1)** | **2026-10-07** | **180,602,676** | **1.445** | **+79.8%** |
 
 This repo's entries are in bold, credited to the AI model that wrote them.
 Total = compressor + archive; bpc = total x 8 / 10^9; "vs record" = how much
 bigger than the record. Official figures from
 [prize.hutter1.net](http://prize.hutter1.net/).
-
-¹ Not measured: cm1's enwik9 size scaled by cm2's enwik8 gain so far (steps 1-4 of 7).
 
 ## Quick start
 
