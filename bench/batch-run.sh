@@ -53,7 +53,8 @@ ec=NO
 printf 'edgecases\t0\t0\t0\t0\t%s\t(default build, see edgecases.log)\n' "$ec" > "$out/edgecases.row"
 export ATTEMPT="$attempt" SRC="$src" BATCH_DIR="$(pwd)/work/batch"
 
-grep -vE '^\s*(#|$)' "$variants" | xargs -P "$jobs" -L 1 bash -c 'one "$@"' _ > "$out/results.unsorted"
+# strip trailing blanks: xargs -L treats a trailing blank as a line continuation
+grep -vE '^\s*(#|$)' "$variants" | sed 's/[[:space:]]*$//' | xargs -P "$jobs" -L 1 bash -c 'one "$@"' _ > "$out/results.unsorted"
 {
   printf 'name\tarchive_bytes\tcompress_s\tdecompress_s\tpeak_mb\tverified\tcflags\n'
   cat "$out/edgecases.row"

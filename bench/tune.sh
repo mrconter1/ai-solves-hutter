@@ -13,7 +13,7 @@
 set -euo pipefail
 [ $# -ge 1 ] || { sed -n '2,11p' "$0" >&2; exit 1; }
 base=${BASE_FLAGS:-}
-echo "base $base"
+echo "base${base:+ $base}"
 for spec in "$@"; do
   name=${spec%%=*}
   values=${spec#*=}
