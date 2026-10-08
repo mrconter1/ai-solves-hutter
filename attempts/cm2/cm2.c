@@ -115,7 +115,7 @@ typedef uint64_t U64;
 #define MLONG_BITS 22
 #endif
 #ifndef MATCH_CTX
-#define MATCH_CTX 0
+#define MATCH_CTX 2   /* step 6: match byte + length bucket + order-2, accepted on enwik8 */
 #endif
 #ifndef MSM2
 #define MSM2 0
